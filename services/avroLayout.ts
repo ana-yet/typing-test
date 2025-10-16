@@ -13,12 +13,12 @@ const maps = {
     'a': 'অ', 'A': 'আ', 'i': 'ই', 'I': 'ঈ', 'u': 'উ', 'U': 'ঊ',
     'e': 'এ', 'E': 'ঐ', 'o': 'ও', 'O': 'ঔ',
     // Consonants (single char)
-    'k': 'ক', 'g': 'গ', 'c': 'চ', 'j': 'জ', 'T': 'ট', 'D': 'ড', 'N': 'ণ', 't': 'ত', 'd': 'দ',
-    'n': 'ন', 'p': 'প', 'f': 'ফ', 'b': 'ব', 'v': 'ভ', 'm': 'ম', 'z': 'য', 'r': 'র',
-    'l': 'ল', 's': 'স', 'S': 'ষ', 'h': 'হ', 'R': 'ড়', 'y': 'য়',
+    'k': 'ক', 'K': 'খ', 'g': 'গ', 'G': 'ঘ', 'c': 'চ', 'C': 'ছ', 'j': 'জ', 'J': 'ঝ', 
+    'T': 'ট', 'Th': 'ঠ', 'D': 'ড', 'Dh': 'ঢ', 'N': 'ণ', 't': 'ত', 'th': 'থ', 'd': 'দ', 'dh': 'ধ',
+    'n': 'ন', 'p': 'প', 'ph': 'ফ', 'f': 'ফ', 'b': 'ব', 'bh': 'ভ', 'v': 'ভ', 'm': 'ম', 'z': 'য', 'r': 'র',
+    'l': 'ল', 's': 'স', 'S': 'ষ', 'sh': 'শ', 'h': 'হ', 'R': 'ড়', 'Rh': 'ঢ়','y': 'য়',
     // Consonants (multi-char)
-    'kh': 'খ', 'gh': 'ঘ', 'Ng': 'ঙ', 'ch': 'ছ', 'jh': 'ঝ', 'NG': 'ঞ', 'Th': 'ঠ', 'Dh': 'ঢ',
-    'th': 'থ', 'dh': 'ধ', 'ph': 'ফ', 'bh': 'ভ', 'sh': 'শ', 'Rh': 'ঢ়',
+    'kh': 'খ', 'gh': 'ঘ', 'Ng': 'ঙ', 'ch': 'ছ', 'jh': 'ঝ', 'NG': 'ঞ',
     // Special Characters
     'ng': 'ং',
     '^': 'ঁ',
@@ -28,7 +28,7 @@ const maps = {
 };
 
 const karMap = {
-    'a': 'া', 'A': 'া', 'i': 'ি', 'I': 'ী', 'u': 'ু', 'U': 'ূ', 'e': 'ে',
+    'a': '', 'A': 'া', 'i': 'ি', 'I': 'ী', 'u': 'ু', 'U': 'ূ', 'e': 'ে',
     'E': 'ৈ', 'o': 'ো', 'O': 'ৌ', 'r': '্র', 'ri': 'ৃ'
 };
 
@@ -42,21 +42,18 @@ const folaMap = {
 export function translate(text: string): string {
     let result = '';
     let lastCharWasConsonant = false;
-    let lastCharWasHosonto = false;
-    let previousBengaliChar = '';
 
     for (let i = 0; i < text.length; i++) {
         let processed = false;
         
         // Lookahead for 3-char sequences like 'rri'
         if (i + 2 < text.length) {
-            const threeChar = text.substring(i, i + 3);
+            const threeChar = text.substring(i, i + 3).toLowerCase();
             if (threeChar === 'rri') {
-                result += 'ঋ';
+                result += (lastCharWasConsonant ? 'ৃ' : 'ঋ');
                 i += 2;
                 processed = true;
                 lastCharWasConsonant = false;
-                lastCharWasHosonto = false;
             }
         }
         
@@ -64,17 +61,16 @@ export function translate(text: string): string {
         if (!processed && i + 1 < text.length) {
             const twoChar = text.substring(i, i + 2);
             if (maps[twoChar]) {
+                if (lastCharWasConsonant) result += '্';
                 result += maps[twoChar];
                 i += 1;
                 processed = true;
                 lastCharWasConsonant = true;
-                lastCharWasHosonto = false;
-            } else if (karMap[twoChar]) { // for 'ri' kar
-                 result += karMap[twoChar];
+            } else if (karMap[twoChar.toLowerCase()]) { // for 'ri' kar
+                 result += karMap[twoChar.toLowerCase()];
                  i += 1;
                  processed = true;
                  lastCharWasConsonant = false;
-                 lastCharWasHosonto = false;
             }
         }
         
@@ -89,38 +85,34 @@ export function translate(text: string): string {
                     result += maps[char];
                 }
                 lastCharWasConsonant = false;
-                lastCharWasHosonto = false;
             } else if (maps[char]) {
+                if(lastCharWasConsonant) result += '্';
                 result += maps[char];
                 lastCharWasConsonant = true;
-                lastCharWasHosonto = false;
-            } else if (char === 'h') {
+            } else if (char === 'h' || char === 'H') {
                 if (lastCharWasConsonant) {
+                    // This is a hosonto, indicating a conjunct
+                    // The logic for two-char like 'kh' already handles this
+                    // so we just add the hosonto here.
                     result += '্';
-                    lastCharWasHosonto = true;
                 } else {
                     result += 'হ'; // 'h' at the beginning or after a vowel
                     lastCharWasConsonant = true;
-                    lastCharWasHosonto = false;
                 }
             } else if (folaMap[char] && lastCharWasConsonant) {
                  result += folaMap[char];
                  lastCharWasConsonant = true; // a fola forms part of a consonant cluster
-                 lastCharWasHosonto = false;
-            }
-            else {
+            } else {
                 // For numbers, symbols, or unmapped chars
                 result += char;
                 lastCharWasConsonant = false;
-                lastCharWasHosonto = false;
             }
         }
-         previousBengaliChar = result.slice(-1);
     }
     
-    // Automatic vowel for trailing hosonto, e.g. "k" becomes "ক" not "ক্"
+    // Automatic vowel 'o' for trailing hosonto, e.g. "k" becomes "ক" not "ক্"
     if (result.endsWith('্')) {
-        result = result.slice(0, -1) + 'অ';
+        result = result.slice(0, -1);
     }
 
     return result;

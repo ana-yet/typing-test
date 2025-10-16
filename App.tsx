@@ -17,6 +17,7 @@ const App: React.FC = () => {
     const [difficulty, setDifficulty] = useState('medium');
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [activeKey, setActiveKey] = useState<string>('');
+    const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
 
     const startTime = useRef<number | null>(null);
     const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -210,12 +211,19 @@ const App: React.FC = () => {
                         <>
                             <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-slate-400 select-none ${language === 'bengali' ? 'font-serif' : ''}`}>
                                 {textToType.split('').map((char, index) => {
-                                    let color = 'text-slate-500';
+                                    let charClassName;
+                                    const isCursor = index === userInput.length && phase !== TypePhase.Finished;
+
                                     if (index < userInput.length) {
-                                        color = char === userInput[index] ? 'text-green-400' : 'text-red-400 bg-red-900/50 rounded-sm';
+                                        charClassName = char === userInput[index] ? 'text-green-400' : 'text-red-400 bg-red-900/50 rounded-sm';
+                                    } else {
+                                        charClassName = 'text-slate-500';
                                     }
+                                    
+                                    const cursorClassName = isCursor ? (char === ' ' ? 'cursor-blink-space' : 'cursor-blink') : '';
+
                                     return (
-                                        <span key={index} className={color}>
+                                        <span key={index} className={`${charClassName} ${cursorClassName}`}>
                                             {char === ' ' ? '\u00A0' : char}
                                         </span>
                                     );
@@ -244,6 +252,15 @@ const App: React.FC = () => {
                     >
                         {phase === TypePhase.Finished ? 'Try Again' : 'Restart'}
                     </button>
+                    {language === 'bengali' && (
+                         <button 
+                            onClick={() => setShowAvroChart(!showAvroChart)}
+                            aria-label="Show Avro Chart"
+                            className="p-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-white"
+                        >
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                        </button>
+                    )}
                     <button 
                         onClick={() => setSoundEnabled(!soundEnabled)}
                         aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
@@ -257,7 +274,12 @@ const App: React.FC = () => {
                     </button>
                 </div>
                 
-                {language === 'bengali' && <AvroKeyboard activeKey={activeKey} />}
+                {language === 'bengali' && showAvroChart && (
+                    <AvroKeyboard 
+                        activeKey={activeKey} 
+                        onClose={() => setShowAvroChart(false)}
+                    />
+                )}
 
             </main>
         </div>
