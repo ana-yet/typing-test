@@ -1,7 +1,7 @@
 // The function is updated to use OpenRouter API instead of Gemini.
 // It now reads OPENROUTER_API_KEY from the environment variables as requested by the user.
 export async function generateTypingText(language: string, difficulty: string): Promise<string> {
-    const apiKey = import.meta.env.OPENROUTER_API_KEY; // Use the key specified by the user
+    const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY; // Use the key specified by the user
 
     if (!apiKey) {
         console.error("OPENROUTER_API_KEY not configured in environment variables.");
