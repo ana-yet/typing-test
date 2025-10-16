@@ -1,19 +1,22 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { generateTypingText } from './services/geminiService';
+import { translate as translateToAvro } from './services/avroLayout';
 import StatsCard from './components/StatsCard';
 import Spinner from './components/Spinner';
+import AvroKeyboard from './components/AvroKeyboard';
 import { TypePhase } from './types';
 
 const App: React.FC = () => {
     const [phase, setPhase] = useState<TypePhase>(TypePhase.Idle);
     const [textToType, setTextToType] = useState<string>('');
-    const [userInput, setUserInput] = useState<string>('');
+    const [userInput, setUserInput] = useState<string>(''); // This will hold the Bengali text
+    const [rawInput, setRawInput] = useState<string>(''); // This will hold the raw English input
     const [loading, setLoading] = useState<boolean>(true);
     
     const [language, setLanguage] = useState('english');
     const [difficulty, setDifficulty] = useState('medium');
     const [soundEnabled, setSoundEnabled] = useState(true);
+    const [activeKey, setActiveKey] = useState<string>('');
 
     const startTime = useRef<number | null>(null);
     const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -27,9 +30,18 @@ const App: React.FC = () => {
     const keypressSound = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
-        // This effect runs once on mount to initialize the audio object.
-        // A very short, silent audio file as a placeholder to enable playback on user interaction.
         keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+    }, []);
+    
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => setActiveKey(e.key);
+        const handleKeyUp = () => setActiveKey('');
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
     }, []);
 
     const fetchText = useCallback(async () => {
@@ -54,6 +66,7 @@ const App: React.FC = () => {
     const resetState = () => {
         setPhase(TypePhase.Idle);
         setUserInput('');
+        setRawInput('');
         setElapsedTime(0);
         setWpm(0);
         setAccuracy(100);
@@ -93,16 +106,30 @@ const App: React.FC = () => {
                 }
             }, 1000);
         }
+        
+        setRawInput(value);
+    };
 
-        if (value.length >= textToType.length) {
-            setPhase(TypePhase.Finished);
-            if (timerInterval.current) {
-                clearInterval(timerInterval.current);
+    useEffect(() => {
+        if (language === 'bengali') {
+            const translated = translateToAvro(rawInput);
+            setUserInput(translated);
+            if (translated.length >= textToType.length && phase === TypePhase.Typing) {
+                 setPhase(TypePhase.Finished);
+                 if (timerInterval.current) {
+                     clearInterval(timerInterval.current);
+                 }
+            }
+        } else {
+            setUserInput(rawInput);
+            if (rawInput.length >= textToType.length && phase === TypePhase.Typing) {
+                 setPhase(TypePhase.Finished);
+                 if (timerInterval.current) {
+                     clearInterval(timerInterval.current);
+                 }
             }
         }
-        
-        setUserInput(value);
-    };
+    }, [rawInput, language, textToType.length, phase]);
 
     useEffect(() => {
         if (phase === TypePhase.Typing || phase === TypePhase.Finished) {
@@ -121,7 +148,7 @@ const App: React.FC = () => {
             setAccuracy(currentAccuracy);
 
             if (elapsedTime > 0) {
-                const wordsTyped = correctChars / 5;
+                const wordsTyped = correctChars / 5; // Standard is 5 chars per word
                 const minutes = elapsedTime / 60;
                 const currentWpm = Math.round(wordsTyped / minutes);
                 setWpm(currentWpm);
@@ -189,25 +216,22 @@ const App: React.FC = () => {
                                     }
                                     return (
                                         <span key={index} className={color}>
-                                            {char}
+                                            {char === ' ' ? '\u00A0' : char}
                                         </span>
                                     );
                                 })}
                             </p>
-                            <span 
-                                className={`absolute top-6 left-6 text-xl sm:text-2xl leading-relaxed tracking-wider text-transparent transition-transform duration-100 ease-in-out pointer-events-none`}
-                                style={{ transform: `translateX(${userInput.length}ch)` }}
-                            >
-                                <span className={`border-l-2 ${phase === TypePhase.Typing || phase === TypePhase.Idle ? 'border-sky-400 animate-pulse' : 'border-transparent'}`}></span>
-                            </span>
                             <input
                                 ref={inputRef}
                                 type="text"
-                                value={userInput}
+                                value={rawInput}
                                 onChange={handleInput}
                                 className="absolute top-0 left-0 w-full h-full opacity-0 cursor-text"
                                 disabled={phase === TypePhase.Finished || loading}
                                 autoFocus
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
                             />
                         </>
                     )}
@@ -232,6 +256,9 @@ const App: React.FC = () => {
                         )}
                     </button>
                 </div>
+                
+                {language === 'bengali' && <AvroKeyboard activeKey={activeKey} />}
+
             </main>
         </div>
     );
