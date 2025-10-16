@@ -1,7 +1,7 @@
 // The function is updated to use OpenRouter API instead of Gemini.
 // It now reads OPENROUTER_API_KEY from the environment variables as requested by the user.
 export async function generateTypingText(language: string, difficulty: string): Promise<string> {
-    const apiKey = "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"; // Use the key specified by the user
+    const apiKey = process.env.OPENROUTER_API_KEY; // Use the key specified by the user
 
     if (!apiKey) {
         console.error("OPENROUTER_API_KEY not configured in environment variables.");
@@ -20,7 +20,7 @@ export async function generateTypingText(language: string, difficulty: string): 
                 "X-Title": "Typing Speed Test",
             },
             body: JSON.stringify({
-                "model": "meta-llama/llama-3.2-3b-instruct:free", 
+                "model": "meta-llama/llama-4-maverick:free", 
                 "messages": [
                     { "role": "user", "content": prompt }
                 ]
