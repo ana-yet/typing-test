@@ -1,0 +1,5 @@
+{
+  "name": "Typing Speed Test",
+  "description": "A web application for typing practice. A piece of text is displayed, and the user types it. The application calculates and displays the user’s typing speed (in words per minute) and accuracy.",
+  "requestFramePermissions": []
+}
