@@ -209,7 +209,7 @@ const App: React.FC = () => {
                         </div>
                     ) : (
                         <>
-                            <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-slate-400 select-none ${language === 'bengali' ? 'font-serif' : ''}`}>
+                            <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-slate-400 select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
                                 {textToType.split('').map((char, index) => {
                                     let charClassName;
                                     const isCursor = index === userInput.length && phase !== TypePhase.Finished;
