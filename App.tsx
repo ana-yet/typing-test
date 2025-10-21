@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { generateTypingText } from './services/geminiService';
 import { translate as translateToAvro } from './services/avroLayout';
@@ -215,7 +216,7 @@ const App: React.FC = () => {
                                     const isCursor = index === userInput.length && phase !== TypePhase.Finished;
 
                                     if (index < userInput.length) {
-                                        charClassName = char === userInput[index] ? 'text-green-400' : 'text-red-400 bg-red-900/50 rounded-sm';
+                                        charClassName = char === userInput[index] ? 'text-green-400' : 'bg-red-500 text-white rounded-sm';
                                     } else {
                                         charClassName = 'text-slate-500';
                                     }

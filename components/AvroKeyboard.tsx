@@ -10,10 +10,12 @@ interface KeyProps {
 
 const Key: React.FC<KeyProps> = ({ en, bn, bnShift, className = '', active }) => {
   const baseClasses = "h-12 rounded-md flex flex-col items-center justify-center p-1 border-b-4 transition-all duration-75 font-sans";
-  const activeClasses = active ? "bg-sky-500 border-sky-300 transform -translate-y-px" : "bg-slate-700 border-slate-900 hover:bg-slate-600";
+  const dynamicClasses = active 
+    ? "bg-sky-500 border-sky-300 transform -translate-y-px" 
+    : "bg-slate-700 border-slate-900 hover:bg-slate-600";
   
   return (
-    <div className={`${baseClasses} ${activeClasses} ${className}`}>
+    <div className={`${baseClasses} ${dynamicClasses} ${className}`}>
       <span className="text-sm text-slate-300 self-end px-1">{bnShift}</span>
       <span className="font-bold text-lg text-white -mt-3">{en.toUpperCase()}</span>
       <span className="text-sm text-sky-300 self-start px-1">{bn}</span>
