@@ -36,13 +36,13 @@ const App: React.FC = () => {
     }, []);
     
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => setActiveKey(e.key);
-        const handleKeyUp = () => setActiveKey('');
-        window.addEventListener('keydown', handleKeyDown);
-        window.addEventListener('keyup', handleKeyUp);
+        const handleWindowKeyDown = (e: KeyboardEvent) => setActiveKey(e.key);
+        const handleWindowKeyUp = () => setActiveKey('');
+        window.addEventListener('keydown', handleWindowKeyDown);
+        window.addEventListener('keyup', handleWindowKeyUp);
         return () => {
-            window.removeEventListener('keydown', handleKeyDown);
-            window.removeEventListener('keyup', handleKeyUp);
+            window.removeEventListener('keydown', handleWindowKeyDown);
+            window.removeEventListener('keyup', handleWindowKeyUp);
         };
     }, []);
 
@@ -91,12 +91,18 @@ const App: React.FC = () => {
         }
     };
 
+    const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        // Play sound on key presses that will result in a character change.
+        // This handles key repeat as onKeyDown fires repeatedly when a key is held down.
+        if (e.key.length === 1 || e.key === 'Backspace') {
+            playSound();
+        }
+    };
+
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
 
         if (phase === TypePhase.Finished) return;
-        
-        playSound();
 
         if (phase === TypePhase.Idle && value.length > 0) {
             setPhase(TypePhase.Typing);
@@ -234,6 +240,7 @@ const App: React.FC = () => {
                                 ref={inputRef}
                                 type="text"
                                 value={rawInput}
+                                onKeyDown={handleInputKeyDown}
                                 onChange={handleInput}
                                 className="absolute top-0 left-0 w-full h-full opacity-0 cursor-text"
                                 disabled={phase === TypePhase.Finished || loading}
