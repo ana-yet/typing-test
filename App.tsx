@@ -28,11 +28,28 @@ const App: React.FC = () => {
     const [accuracy, setAccuracy] = useState<number>(100);
     const [errors, setErrors] = useState<number>(0);
 
+    // State for personal best scores
+    const [bestWpm, setBestWpm] = useState<number>(0);
+    const [bestAccuracy, setBestAccuracy] = useState<number>(0);
+
     const inputRef = useRef<HTMLInputElement>(null);
     const keypressSound = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
         keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+    }, []);
+
+    // Load best scores from localStorage on initial render
+    useEffect(() => {
+        const storedBestWpm = localStorage.getItem('bestWpm');
+        const storedBestAccuracy = localStorage.getItem('bestAccuracy');
+
+        if (storedBestWpm) {
+            setBestWpm(parseInt(storedBestWpm, 10) || 0);
+        }
+        if (storedBestAccuracy) {
+            setBestAccuracy(parseFloat(storedBestAccuracy) || 0);
+        }
     }, []);
     
     useEffect(() => {
@@ -119,22 +136,28 @@ const App: React.FC = () => {
     };
 
     useEffect(() => {
+        const handleFinish = () => {
+            if (phase !== TypePhase.Typing) return;
+            setPhase(TypePhase.Finished);
+            if (timerInterval.current) {
+                clearInterval(timerInterval.current);
+            }
+            if (startTime.current) {
+                const finalElapsedTime = (Date.now() - startTime.current) / 1000;
+                setElapsedTime(finalElapsedTime);
+            }
+        };
+
         if (language === 'bengali') {
             const translated = translateToAvro(rawInput);
             setUserInput(translated);
-            if (translated.length >= textToType.length && phase === TypePhase.Typing) {
-                 setPhase(TypePhase.Finished);
-                 if (timerInterval.current) {
-                     clearInterval(timerInterval.current);
-                 }
+            if (translated.length >= textToType.length) {
+                handleFinish();
             }
         } else {
             setUserInput(rawInput);
-            if (rawInput.length >= textToType.length && phase === TypePhase.Typing) {
-                 setPhase(TypePhase.Finished);
-                 if (timerInterval.current) {
-                     clearInterval(timerInterval.current);
-                 }
+            if (rawInput.length >= textToType.length) {
+                handleFinish();
             }
         }
     }, [rawInput, language, textToType.length, phase]);
@@ -164,6 +187,20 @@ const App: React.FC = () => {
         }
     }, [userInput, elapsedTime, textToType, phase]);
     
+    // Save new best scores to localStorage when a test is finished
+    useEffect(() => {
+        if (phase === TypePhase.Finished) {
+            if (wpm > bestWpm) {
+                setBestWpm(wpm);
+                localStorage.setItem('bestWpm', wpm.toString());
+            }
+            if (accuracy > bestAccuracy) {
+                setBestAccuracy(accuracy);
+                localStorage.setItem('bestAccuracy', accuracy.toString());
+            }
+        }
+    }, [phase, wpm, accuracy, bestWpm, bestAccuracy]);
+
     const focusInput = () => {
       inputRef.current?.focus();
     }
@@ -202,11 +239,13 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl mb-8">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
+                    <StatsCard label="Best WPM" value={bestWpm} />
                     <StatsCard label="Errors" value={errors} />
                     <StatsCard label="Time" value={elapsedTime.toFixed(0)} unit="s" />
+                    <StatsCard label="Best Accuracy" value={bestAccuracy.toFixed(0)} unit="%" />
                 </div>
 
                 <div className="w-full bg-slate-800 p-6 rounded-lg shadow-lg relative" onClick={focusInput}>
