@@ -27,6 +27,7 @@ const App: React.FC = () => {
     const [wpm, setWpm] = useState<number>(0);
     const [accuracy, setAccuracy] = useState<number>(100);
     const [errors, setErrors] = useState<number>(0);
+    const [wordCount, setWordCount] = useState<number>(0);
 
     // State for personal best scores
     const [bestWpm, setBestWpm] = useState<number>(0);
@@ -90,6 +91,7 @@ const App: React.FC = () => {
         setWpm(0);
         setAccuracy(100);
         setErrors(0);
+        setWordCount(0);
         startTime.current = null;
         if (timerInterval.current) {
             clearInterval(timerInterval.current);
@@ -177,6 +179,9 @@ const App: React.FC = () => {
             const correctChars = typedChars - currentErrors;
             const currentAccuracy = typedChars > 0 ? (correctChars / typedChars) * 100 : 100;
             setAccuracy(currentAccuracy);
+            
+            const words = userInput.trim() === '' ? [] : userInput.trim().split(/\s+/);
+            setWordCount(words.length);
 
             if (elapsedTime > 0) {
                 const wordsTyped = correctChars / 5; // Standard is 5 chars per word
@@ -242,9 +247,10 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
-                    <StatsCard label="Best WPM" value={bestWpm} />
-                    <StatsCard label="Errors" value={errors} />
                     <StatsCard label="Time" value={elapsedTime.toFixed(0)} unit="s" />
+                    <StatsCard label="Errors" value={errors} />
+                    <StatsCard label="Word Count" value={wordCount} />
+                    <StatsCard label="Best WPM" value={bestWpm} />
                     <StatsCard label="Best Accuracy" value={bestAccuracy.toFixed(0)} unit="%" />
                 </div>
 
