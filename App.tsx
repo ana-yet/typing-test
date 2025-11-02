@@ -16,6 +16,7 @@ const App: React.FC = () => {
     
     const [language, setLanguage] = useState('english');
     const [difficulty, setDifficulty] = useState('medium');
+    const [duration, setDuration] = useState<number>(60);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
@@ -64,26 +65,7 @@ const App: React.FC = () => {
         };
     }, []);
 
-    const fetchText = useCallback(() => {
-        setLoading(true);
-        resetState();
-        try {
-            const newText = generateTypingText(language, difficulty);
-            setTextToType(newText);
-        } catch (error) {
-            console.error("Failed to generate text:", error);
-            setTextToType("The quick brown fox jumps over the lazy dog. Please try refreshing the page.");
-        } finally {
-            setLoading(false);
-            setTimeout(() => inputRef.current?.focus(), 50);
-        }
-    }, [language, difficulty]);
-
-    useEffect(() => {
-        fetchText();
-    }, [fetchText]);
-
-    const resetState = () => {
+    const resetState = useCallback(() => {
         setPhase(TypePhase.Idle);
         setUserInput('');
         setRawInput('');
@@ -97,11 +79,46 @@ const App: React.FC = () => {
             clearInterval(timerInterval.current);
             timerInterval.current = null;
         }
-    };
+    }, []);
+
+    const fetchText = useCallback(() => {
+        setLoading(true);
+        resetState();
+        try {
+            const newText = generateTypingText(language, difficulty);
+            setTextToType(newText);
+        } catch (error) {
+            console.error("Failed to generate text:", error);
+            setTextToType("The quick brown fox jumps over the lazy dog. Please try refreshing the page.");
+        } finally {
+            setLoading(false);
+            setTimeout(() => inputRef.current?.focus(), 50);
+        }
+    }, [language, difficulty, resetState]);
+
+    useEffect(() => {
+        fetchText();
+    }, [fetchText]);
 
     const handleRestart = () => {
         fetchText();
     };
+    
+    const finishTest = useCallback(() => {
+        if (phase !== TypePhase.Typing) return;
+    
+        if (timerInterval.current) {
+            clearInterval(timerInterval.current);
+            timerInterval.current = null;
+        }
+    
+        setPhase(TypePhase.Finished);
+    
+        if (startTime.current) {
+            const finalTime = Math.min((Date.now() - startTime.current) / 1000, duration);
+            setElapsedTime(finalTime);
+        }
+    }, [phase, duration]);
 
     const playSound = () => {
         if (soundEnabled && keypressSound.current) {
@@ -111,8 +128,6 @@ const App: React.FC = () => {
     };
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        // Play sound on key presses that will result in a character change.
-        // This handles key repeat as onKeyDown fires repeatedly when a key is held down.
         if (e.key.length === 1 || e.key === 'Backspace') {
             playSound();
         }
@@ -127,42 +142,36 @@ const App: React.FC = () => {
             setPhase(TypePhase.Typing);
             startTime.current = Date.now();
             timerInterval.current = setInterval(() => {
-                const now = Date.now();
                 if(startTime.current) {
-                    setElapsedTime((now - startTime.current) / 1000);
+                    const currentElapsedTime = (Date.now() - startTime.current) / 1000;
+                    if (currentElapsedTime >= duration) {
+                        finishTest();
+                    } else {
+                       setElapsedTime(currentElapsedTime);
+                    }
                 }
-            }, 1000);
+            }, 500);
         }
         
         setRawInput(value);
     };
 
     useEffect(() => {
-        const handleFinish = () => {
-            if (phase !== TypePhase.Typing) return;
-            setPhase(TypePhase.Finished);
-            if (timerInterval.current) {
-                clearInterval(timerInterval.current);
-            }
-            if (startTime.current) {
-                const finalElapsedTime = (Date.now() - startTime.current) / 1000;
-                setElapsedTime(finalElapsedTime);
-            }
-        };
+        if (phase !== TypePhase.Typing) return;
 
+        let currentText = rawInput;
         if (language === 'bengali') {
             const translated = translateToAvro(rawInput);
             setUserInput(translated);
-            if (translated.length >= textToType.length) {
-                handleFinish();
-            }
+            currentText = translated;
         } else {
             setUserInput(rawInput);
-            if (rawInput.length >= textToType.length) {
-                handleFinish();
-            }
         }
-    }, [rawInput, language, textToType.length, phase]);
+
+        if (currentText.length >= textToType.length) {
+            finishTest();
+        }
+    }, [rawInput, language, textToType.length, phase, finishTest]);
 
     useEffect(() => {
         if (phase === TypePhase.Typing || phase === TypePhase.Finished) {
@@ -183,16 +192,16 @@ const App: React.FC = () => {
             const words = userInput.trim() === '' ? [] : userInput.trim().split(/\s+/);
             setWordCount(words.length);
 
-            if (elapsedTime > 0) {
-                const wordsTyped = correctChars / 5; // Standard is 5 chars per word
-                const minutes = elapsedTime / 60;
+            const effectiveTime = phase === TypePhase.Finished ? Math.max(elapsedTime, 1) : elapsedTime;
+            if (effectiveTime > 0) {
+                const wordsTyped = correctChars / 5;
+                const minutes = effectiveTime / 60;
                 const currentWpm = Math.round(wordsTyped / minutes);
                 setWpm(currentWpm);
             }
         }
     }, [userInput, elapsedTime, textToType, phase]);
     
-    // Save new best scores to localStorage when a test is finished
     useEffect(() => {
         if (phase === TypePhase.Finished) {
             if (wpm > bestWpm) {
@@ -209,12 +218,19 @@ const App: React.FC = () => {
     const focusInput = () => {
       inputRef.current?.focus();
     }
+    
+    const timeDisplay = phase === TypePhase.Idle 
+        ? duration 
+        : phase === TypePhase.Typing 
+            ? Math.max(0, duration - Math.floor(elapsedTime))
+            : elapsedTime.toFixed(0);
 
-    const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode }> = 
-        ({ value, state, onClick, children }) => (
+    const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode; disabled?: boolean; }> = 
+        ({ value, state, onClick, children, disabled }) => (
         <button 
             onClick={() => onClick(value)}
-            className={`px-3 py-1 text-sm rounded-md transition-colors capitalize ${state === value ? 'bg-sky-600 text-white' : 'bg-slate-700 hover:bg-slate-600'}`}
+            className={`px-3 py-1 text-sm rounded-md transition-colors capitalize ${state === value ? 'bg-sky-600 text-white' : 'bg-slate-700 hover:bg-slate-600'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={disabled}
         >
             {children}
         </button>
@@ -230,24 +246,43 @@ const App: React.FC = () => {
                     <div className="flex items-center gap-2">
                         <span className="text-slate-400">Language:</span>
                         <div className="flex gap-2 rounded-lg p-1 bg-slate-800">
-                            <OptionButton value="english" state={language} onClick={setLanguage}>English</OptionButton>
-                            <OptionButton value="bengali" state={language} onClick={setLanguage}>Bengali</OptionButton>
+                            <OptionButton value="english" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>English</OptionButton>
+                            <OptionButton value="bengali" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>Bengali</OptionButton>
                         </div>
                     </div>
                      <div className="flex items-center gap-2">
                         <span className="text-slate-400">Difficulty:</span>
                         <div className="flex gap-2 rounded-lg p-1 bg-slate-800">
-                           <OptionButton value="easy" state={difficulty} onClick={setDifficulty}>Easy</OptionButton>
-                           <OptionButton value="medium" state={difficulty} onClick={setDifficulty}>Medium</OptionButton>
-                           <OptionButton value="hard" state={difficulty} onClick={setDifficulty}>Hard</OptionButton>
+                           <OptionButton value="easy" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Easy</OptionButton>
+                           <OptionButton value="medium" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Medium</OptionButton>
+                           <OptionButton value="hard" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Hard</OptionButton>
                         </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-slate-400">Duration (s):</span>
+                        <input
+                            type="number"
+                            value={duration}
+                            min="10"
+                            step="10"
+                            onChange={(e) => {
+                                if (phase === TypePhase.Typing) return;
+                                const newDuration = parseInt(e.target.value, 10);
+                                if (!isNaN(newDuration) && newDuration > 0) {
+                                    setDuration(newDuration);
+                                    resetState();
+                                }
+                            }}
+                            className="w-24 bg-slate-800 rounded-lg p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={phase === TypePhase.Typing}
+                        />
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full max-w-3xl mb-8">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
-                    <StatsCard label="Time" value={elapsedTime.toFixed(0)} unit="s" />
+                    <StatsCard label="Time" value={timeDisplay} unit="s" />
                     <StatsCard label="Errors" value={errors} />
                     <StatsCard label="Word Count" value={wordCount} />
                     <StatsCard label="Best WPM" value={bestWpm} />
@@ -303,7 +338,7 @@ const App: React.FC = () => {
                         onClick={handleRestart} 
                         className="px-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-500 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 focus:ring-offset-slate-900"
                     >
-                        {phase === TypePhase.Finished ? 'Try Again' : 'Restart'}
+                        {phase === TypePhase.Finished ? 'New Test' : 'Restart'}
                     </button>
                     {language === 'bengali' && (
                          <button 
