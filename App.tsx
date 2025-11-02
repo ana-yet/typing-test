@@ -16,6 +16,7 @@ const App: React.FC = () => {
     
     const [language, setLanguage] = useState('english');
     const [difficulty, setDifficulty] = useState('medium');
+    const [mode, setMode] = useState<'standard' | 'endurance' | 'accuracy'>('standard');
     const [duration, setDuration] = useState<number>(60);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [activeKey, setActiveKey] = useState<string>('');
@@ -85,7 +86,7 @@ const App: React.FC = () => {
         setLoading(true);
         resetState();
         try {
-            const newText = generateTypingText(language, difficulty);
+            const newText = generateTypingText(language, difficulty, mode);
             setTextToType(newText);
         } catch (error) {
             console.error("Failed to generate text:", error);
@@ -94,7 +95,7 @@ const App: React.FC = () => {
             setLoading(false);
             setTimeout(() => inputRef.current?.focus(), 50);
         }
-    }, [language, difficulty, resetState]);
+    }, [language, difficulty, mode, resetState]);
 
     useEffect(() => {
         fetchText();
@@ -115,10 +116,12 @@ const App: React.FC = () => {
         setPhase(TypePhase.Finished);
     
         if (startTime.current) {
-            const finalTime = Math.min((Date.now() - startTime.current) / 1000, duration);
+            const finalTime = mode === 'endurance' 
+                ? (Date.now() - startTime.current) / 1000
+                : Math.min((Date.now() - startTime.current) / 1000, duration);
             setElapsedTime(finalTime);
         }
-    }, [phase, duration]);
+    }, [phase, duration, mode]);
 
     const playSound = () => {
         if (soundEnabled && keypressSound.current) {
@@ -137,6 +140,14 @@ const App: React.FC = () => {
         const value = e.target.value;
 
         if (phase === TypePhase.Finished) return;
+        
+        if (mode === 'accuracy') {
+            const prospectiveText = language === 'bengali' ? translateToAvro(value) : value;
+            if (!textToType.startsWith(prospectiveText)) {
+                // Here you could add an error sound or visual feedback
+                return; // Prevents incorrect input
+            }
+        }
 
         if (phase === TypePhase.Idle && value.length > 0) {
             setPhase(TypePhase.Typing);
@@ -144,7 +155,7 @@ const App: React.FC = () => {
             timerInterval.current = setInterval(() => {
                 if(startTime.current) {
                     const currentElapsedTime = (Date.now() - startTime.current) / 1000;
-                    if (currentElapsedTime >= duration) {
+                    if (mode !== 'endurance' && currentElapsedTime >= duration) {
                         finishTest();
                     } else {
                        setElapsedTime(currentElapsedTime);
@@ -219,11 +230,36 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     }
     
-    const timeDisplay = phase === TypePhase.Idle 
-        ? duration 
-        : phase === TypePhase.Typing 
-            ? Math.max(0, duration - Math.floor(elapsedTime))
-            : elapsedTime.toFixed(0);
+    let timeValue: string | number = 0;
+    let timeUnit: string | undefined = 's';
+
+    if (mode === 'endurance') {
+        switch (phase) {
+            case TypePhase.Idle:
+                timeValue = '∞';
+                timeUnit = undefined;
+                break;
+            case TypePhase.Typing:
+                timeValue = Math.floor(elapsedTime);
+                break;
+            case TypePhase.Finished:
+                timeValue = elapsedTime.toFixed(0);
+                break;
+        }
+    } else { // Standard or Accuracy
+        switch (phase) {
+            case TypePhase.Idle:
+                timeValue = duration;
+                break;
+            case TypePhase.Typing:
+                timeValue = Math.max(0, duration - Math.floor(elapsedTime));
+                break;
+            case TypePhase.Finished:
+                timeValue = elapsedTime.toFixed(0);
+                break;
+        }
+    }
+
 
     const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode; disabled?: boolean; }> = 
         ({ value, state, onClick, children, disabled }) => (
@@ -259,30 +295,40 @@ const App: React.FC = () => {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className="text-slate-400">Duration (s):</span>
-                        <input
-                            type="number"
-                            value={duration}
-                            min="10"
-                            step="10"
-                            onChange={(e) => {
-                                if (phase === TypePhase.Typing) return;
-                                const newDuration = parseInt(e.target.value, 10);
-                                if (!isNaN(newDuration) && newDuration > 0) {
-                                    setDuration(newDuration);
-                                    resetState();
-                                }
-                            }}
-                            className="w-24 bg-slate-800 rounded-lg p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={phase === TypePhase.Typing}
-                        />
+                        <span className="text-slate-400">Mode:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-slate-800">
+                            <OptionButton value="standard" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Standard</OptionButton>
+                            <OptionButton value="endurance" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Endurance</OptionButton>
+                            <OptionButton value="accuracy" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Accuracy</OptionButton>
+                        </div>
                     </div>
+                    {mode !== 'endurance' && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-slate-400">Duration (s):</span>
+                            <input
+                                type="number"
+                                value={duration}
+                                min="10"
+                                step="10"
+                                onChange={(e) => {
+                                    if (phase === TypePhase.Typing) return;
+                                    const newDuration = parseInt(e.target.value, 10);
+                                    if (!isNaN(newDuration) && newDuration > 0) {
+                                        setDuration(newDuration);
+                                        resetState();
+                                    }
+                                }}
+                                className="w-24 bg-slate-800 rounded-lg p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={phase === TypePhase.Typing}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
-                    <StatsCard label="Time" value={timeDisplay} unit="s" />
+                    <StatsCard label="Time" value={timeValue} unit={timeUnit} />
                     <StatsCard label="Errors" value={errors} />
                     <StatsCard label="Word Count" value={wordCount} />
                     <StatsCard label="Best WPM" value={bestWpm} />
