@@ -7,11 +7,30 @@
     <title>Typing Speed Test</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+      :root {
+        --bg-primary: #0f172a;
+        --bg-secondary: #1e293b;
+        --bg-tertiary: #334155;
+        --bg-tertiary-hover: #475569;
+        --text-primary: #f1f5f9;
+        --text-primary-inverted: #ffffff;
+        --text-secondary: #94a3b8;
+        --text-muted: #64748b;
+        --accent-primary: #38bdf8;
+        --accent-secondary: #0ea5e9;
+        --accent-secondary-hover: #38bdf8;
+        --text-correct: #4ade80;
+        --bg-incorrect: #ef4444;
+        --text-incorrect: #ffffff;
+        --border-key: #0f172a;
+        --accent-primary-faded: #7dd3fc;
+        --cursor-color: #38bdf8;
+      }
       @keyframes pulse {
         50% { border-color: transparent; }
       }
       .cursor-blink {
-        border-left: 2px solid #38bdf8; /* sky-400 */
+        border-left: 2px solid var(--cursor-color);
         animation: pulse 1.2s ease-in-out infinite;
         margin-left: -2px; /* Prevents layout shift */
       }
@@ -24,7 +43,7 @@
         top: 20%;
         bottom: 20%;
         left: 0;
-        border-left: 2px solid #38bdf8;
+        border-left: 2px solid var(--cursor-color);
         animation: pulse 1.2s ease-in-out infinite;
       }
     </style>
@@ -39,7 +58,7 @@
 }
 </script>
 </head>
-  <body class="bg-slate-900 text-slate-100">
+  <body class="bg-[var(--bg-primary)] text-[var(--text-primary)]">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

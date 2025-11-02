@@ -7,6 +7,66 @@ import Spinner from './components/Spinner';
 import AvroKeyboard from './components/AvroKeyboard';
 import { TypePhase } from './types';
 
+const themes = {
+  dark: {
+    '--bg-primary': '#0f172a', // slate-900
+    '--bg-secondary': '#1e293b', // slate-800
+    '--bg-tertiary': '#334155', // slate-700
+    '--bg-tertiary-hover': '#475569', // slate-600
+    '--text-primary': '#f1f5f9', // slate-100
+    '--text-primary-inverted': '#ffffff',
+    '--text-secondary': '#94a3b8', // slate-400
+    '--text-muted': '#64748b', // slate-500
+    '--accent-primary': '#38bdf8', // sky-400
+    '--accent-secondary': '#0ea5e9', // sky-600
+    '--accent-secondary-hover': '#38bdf8', // sky-400
+    '--text-correct': '#4ade80', // green-400
+    '--bg-incorrect': '#ef4444', // red-500
+    '--text-incorrect': '#ffffff',
+    '--border-key': '#0f172a', // slate-900
+    '--accent-primary-faded': '#7dd3fc', // sky-300
+    '--cursor-color': '#38bdf8', // sky-400
+  },
+  light: {
+    '--bg-primary': '#f1f5f9', // slate-100
+    '--bg-secondary': '#ffffff', // white
+    '--bg-tertiary': '#e2e8f0', // slate-200
+    '--bg-tertiary-hover': '#cbd5e1', // slate-300
+    '--text-primary': '#0f172a', // slate-900
+    '--text-primary-inverted': '#ffffff',
+    '--text-secondary': '#475569', // slate-600
+    '--text-muted': '#94a3b8', // slate-400
+    '--accent-primary': '#0ea5e9', // sky-600
+    '--accent-secondary': '#0284c7', // sky-700
+    '--accent-secondary-hover': '#0369a1', // sky-800
+    '--text-correct': '#16a34a', // green-600
+    '--bg-incorrect': '#fecaca', // red-200
+    '--text-incorrect': '#b91c1c', // red-800
+    '--border-key': '#f1f5f9', // slate-100
+    '--accent-primary-faded': '#38bdf8', // sky-400
+    '--cursor-color': '#0ea5e9', // sky-600
+  },
+  matrix: {
+    '--bg-primary': '#000000', // black
+    '--bg-secondary': '#0D0208', // very dark
+    '--bg-tertiary': '#003B00', // dark green
+    '--bg-tertiary-hover': '#005a00',
+    '--text-primary': '#00FF00', // green
+    '--text-primary-inverted': '#000000',
+    '--text-secondary': '#00b300', // lighter green
+    '--text-muted': '#008000', // medium green
+    '--accent-primary': '#39FF14', // neon green
+    '--accent-secondary': '#00FF00', // green
+    '--accent-secondary-hover': '#39FF14', // neon green
+    '--text-correct': '#39FF14', // neon green
+    '--bg-incorrect': '#FF0000', // red
+    '--text-incorrect': '#000000',
+    '--border-key': '#000000', // black
+    '--accent-primary-faded': '#00FF00', // green
+    '--cursor-color': '#39FF14', // neon green
+  },
+};
+
 const App: React.FC = () => {
     const [phase, setPhase] = useState<TypePhase>(TypePhase.Idle);
     const [textToType, setTextToType] = useState<string>('');
@@ -21,6 +81,7 @@ const App: React.FC = () => {
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
+    const [theme, setTheme] = useState<string>('dark');
 
     const startTime = useRef<number | null>(null);
     const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -42,10 +103,11 @@ const App: React.FC = () => {
         keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
     }, []);
 
-    // Load best scores from localStorage on initial render
+    // Load saved settings from localStorage on initial render
     useEffect(() => {
         const storedBestWpm = localStorage.getItem('bestWpm');
         const storedBestAccuracy = localStorage.getItem('bestAccuracy');
+        const storedTheme = localStorage.getItem('typingTheme');
 
         if (storedBestWpm) {
             setBestWpm(parseInt(storedBestWpm, 10) || 0);
@@ -53,7 +115,20 @@ const App: React.FC = () => {
         if (storedBestAccuracy) {
             setBestAccuracy(parseFloat(storedBestAccuracy) || 0);
         }
+        if (storedTheme && themes[storedTheme]) {
+            setTheme(storedTheme);
+        }
     }, []);
+
+    // Apply theme changes
+    useEffect(() => {
+        const currentTheme = themes[theme];
+        const root = document.documentElement;
+        Object.keys(currentTheme).forEach(key => {
+            root.style.setProperty(key, currentTheme[key]);
+        });
+        localStorage.setItem('typingTheme', theme);
+    }, [theme]);
     
     useEffect(() => {
         const handleWindowKeyDown = (e: KeyboardEvent) => setActiveKey(e.key);
@@ -265,7 +340,7 @@ const App: React.FC = () => {
         ({ value, state, onClick, children, disabled }) => (
         <button 
             onClick={() => onClick(value)}
-            className={`px-3 py-1 text-sm rounded-md transition-colors capitalize ${state === value ? 'bg-sky-600 text-white' : 'bg-slate-700 hover:bg-slate-600'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`px-3 py-1 text-sm rounded-md transition-colors capitalize ${state === value ? 'bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)]' : 'bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)]'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={disabled}
         >
             {children}
@@ -273,30 +348,30 @@ const App: React.FC = () => {
     );
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 font-mono">
+        <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 font-mono transition-colors duration-300">
             <main className="w-full max-w-4xl mx-auto flex flex-col items-center">
-                <h1 className="text-4xl sm:text-5xl font-bold text-sky-400 mb-4 text-center">Typing Speed Test</h1>
-                <p className="text-slate-400 mb-6 text-center">Type the text below as fast and accurately as you can.</p>
+                <h1 className="text-4xl sm:text-5xl font-bold text-[var(--accent-primary)] mb-4 text-center">Typing Speed Test</h1>
+                <p className="text-[var(--text-secondary)] mb-6 text-center">Type the text below as fast and accurately as you can.</p>
 
-                <div className="flex flex-wrap justify-center gap-x-6 gap-y-4 mb-8">
+                <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-4 mb-8">
                     <div className="flex items-center gap-2">
-                        <span className="text-slate-400">Language:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-slate-800">
+                        <span className="text-[var(--text-secondary)]">Language:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
                             <OptionButton value="english" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>English</OptionButton>
                             <OptionButton value="bengali" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>Bengali</OptionButton>
                         </div>
                     </div>
                      <div className="flex items-center gap-2">
-                        <span className="text-slate-400">Difficulty:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-slate-800">
+                        <span className="text-[var(--text-secondary)]">Difficulty:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
                            <OptionButton value="easy" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Easy</OptionButton>
                            <OptionButton value="medium" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Medium</OptionButton>
                            <OptionButton value="hard" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Hard</OptionButton>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className="text-slate-400">Mode:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-slate-800">
+                        <span className="text-[var(--text-secondary)]">Mode:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
                             <OptionButton value="standard" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Standard</OptionButton>
                             <OptionButton value="endurance" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Endurance</OptionButton>
                             <OptionButton value="accuracy" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Accuracy</OptionButton>
@@ -304,7 +379,7 @@ const App: React.FC = () => {
                     </div>
                     {mode !== 'endurance' && (
                         <div className="flex items-center gap-2">
-                            <span className="text-slate-400">Duration (s):</span>
+                            <span className="text-[var(--text-secondary)]">Duration (s):</span>
                             <input
                                 type="number"
                                 value={duration}
@@ -318,7 +393,7 @@ const App: React.FC = () => {
                                         resetState();
                                     }
                                 }}
-                                className="w-24 bg-slate-800 rounded-lg p-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-24 bg-[var(--bg-secondary)] rounded-lg p-2 text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
                                 disabled={phase === TypePhase.Typing}
                             />
                         </div>
@@ -334,23 +409,44 @@ const App: React.FC = () => {
                     <StatsCard label="Best WPM" value={bestWpm} />
                     <StatsCard label="Best Accuracy" value={bestAccuracy.toFixed(0)} unit="%" />
                 </div>
+                
+                 <div className="flex items-center gap-2 mb-8">
+                    <span className="text-[var(--text-secondary)]">Theme:</span>
+                    <div className="flex gap-3 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                        {Object.entries(themes).map(([themeKey, themeColors]) => (
+                            <button
+                                key={themeKey}
+                                title={themeKey}
+                                aria-label={`Select ${themeKey} theme`}
+                                onClick={() => setTheme(themeKey)}
+                                className={`w-8 h-6 rounded flex overflow-hidden border-2 transition-all ${
+                                    theme === themeKey ? 'border-[var(--accent-primary)] scale-110' : 'border-transparent hover:border-[var(--text-muted)]'
+                                }`}
+                                disabled={phase === TypePhase.Typing}
+                            >
+                                <div style={{ backgroundColor: themeColors['--bg-primary'] }} className="w-1/2 h-full"></div>
+                                <div style={{ backgroundColor: themeColors['--accent-primary'] }} className="w-1/2 h-full"></div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
 
-                <div className="w-full bg-slate-800 p-6 rounded-lg shadow-lg relative" onClick={focusInput}>
+                <div className="w-full bg-[var(--bg-secondary)] p-6 rounded-lg shadow-lg relative" onClick={focusInput}>
                     {loading ? (
                         <div className="h-48 flex items-center justify-center">
                             <Spinner />
                         </div>
                     ) : (
                         <>
-                            <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-slate-400 select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
+                            <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
                                 {textToType.split('').map((char, index) => {
                                     let charClassName;
                                     const isCursor = index === userInput.length && phase !== TypePhase.Finished;
 
                                     if (index < userInput.length) {
-                                        charClassName = char === userInput[index] ? 'text-green-400' : 'bg-red-500 text-white rounded-sm';
+                                        charClassName = char === userInput[index] ? 'text-[var(--text-correct)]' : 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
                                     } else {
-                                        charClassName = 'text-slate-500';
+                                        charClassName = 'text-[var(--text-muted)]';
                                     }
                                     
                                     const cursorClassName = isCursor ? (char === ' ' ? 'cursor-blink-space' : 'cursor-blink') : '';
@@ -382,7 +478,7 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4 mt-8">
                     <button 
                         onClick={handleRestart} 
-                        className="px-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-500 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 focus:ring-offset-slate-900"
+                        className="px-6 py-3 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] font-bold rounded-lg hover:bg-[var(--accent-secondary-hover)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:ring-offset-2 focus:ring-offset-[var(--bg-primary)]"
                     >
                         {phase === TypePhase.Finished ? 'New Test' : 'Restart'}
                     </button>
@@ -390,7 +486,7 @@ const App: React.FC = () => {
                          <button 
                             onClick={() => setShowAvroChart(!showAvroChart)}
                             aria-label="Show Avro Chart"
-                            className="p-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-white"
+                            className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
                         >
                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                         </button>
@@ -398,7 +494,7 @@ const App: React.FC = () => {
                     <button 
                         onClick={() => setSoundEnabled(!soundEnabled)}
                         aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
-                        className="p-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-white"
+                        className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
                     >
                         {soundEnabled ? (
                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.858 15.858a5 5 0 010-7.072m2.829 9.9a9 9 0 010-12.728M12 6v12" /></svg>

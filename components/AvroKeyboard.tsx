@@ -11,14 +11,14 @@ interface KeyProps {
 const Key: React.FC<KeyProps> = ({ en, bn, bnShift, className = '', active }) => {
   const baseClasses = "h-12 rounded-md flex flex-col items-center justify-center p-1 border-b-4 transition-all duration-75 font-sans";
   const dynamicClasses = active 
-    ? "bg-sky-500 border-sky-300 transform -translate-y-px" 
-    : "bg-slate-700 border-slate-900 hover:bg-slate-600";
+    ? "bg-[var(--accent-secondary)] border-[var(--accent-primary)] transform -translate-y-px" 
+    : "bg-[var(--bg-tertiary)] border-[var(--border-key)] hover:bg-[var(--bg-tertiary-hover)]";
   
   return (
     <div className={`${baseClasses} ${dynamicClasses} ${className}`}>
-      <span className="text-sm text-slate-300 self-end px-1">{bnShift}</span>
-      <span className="font-bold text-lg text-white -mt-3">{en.toUpperCase()}</span>
-      <span className="text-sm text-sky-300 self-start px-1">{bn}</span>
+      <span className="text-sm text-[var(--text-muted)] self-end px-1">{bnShift}</span>
+      <span className="font-bold text-lg text-[var(--text-primary)] -mt-3">{en.toUpperCase()}</span>
+      <span className="text-sm text-[var(--accent-primary-faded)] self-start px-1">{bn}</span>
     </div>
   );
 };
@@ -69,12 +69,12 @@ const keyboardLayout = [
 
 const AvroKeyboard: React.FC<{ activeKey: string; onClose: () => void }> = ({ activeKey, onClose }) => {
     return (
-        <div className="w-full max-w-4xl mt-8 p-4 bg-slate-800 rounded-lg shadow-lg animate-fade-in">
+        <div className="w-full max-w-4xl mt-8 p-4 bg-[var(--bg-secondary)] rounded-lg shadow-lg animate-fade-in">
             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-slate-300">Avro Phonetic Chart</h2>
+                <h2 className="text-lg font-bold text-[var(--text-secondary)]">Avro Phonetic Chart</h2>
                 <button 
                     onClick={onClose} 
-                    className="p-1 rounded-full hover:bg-slate-700 transition-colors"
+                    className="p-1 rounded-full hover:bg-[var(--bg-tertiary)] transition-colors"
                     aria-label="Close chart"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

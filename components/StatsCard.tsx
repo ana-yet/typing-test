@@ -9,9 +9,9 @@ interface StatsCardProps {
 
 const StatsCard: React.FC<StatsCardProps> = ({ label, value, unit }) => {
     return (
-        <div className="bg-slate-800 p-4 rounded-lg shadow-md text-center">
-            <p className="text-sm text-slate-400 mb-1">{label}</p>
-            <p className="text-2xl sm:text-3xl font-bold text-sky-400">
+        <div className="bg-[var(--bg-secondary)] p-4 rounded-lg shadow-md text-center">
+            <p className="text-sm text-[var(--text-secondary)] mb-1">{label}</p>
+            <p className="text-2xl sm:text-3xl font-bold text-[var(--accent-primary)]">
                 {value}
                 {unit && <span className="text-base sm:text-lg ml-1">{unit}</span>}
             </p>

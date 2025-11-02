@@ -4,7 +4,7 @@ import React from 'react';
 const Spinner: React.FC = () => {
     return (
         <svg
-            className="animate-spin h-10 w-10 text-sky-400"
+            className="animate-spin h-10 w-10 text-[var(--accent-primary)]"
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
