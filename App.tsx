@@ -82,6 +82,7 @@ const App: React.FC = () => {
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
     const [theme, setTheme] = useState<string>('dark');
+    const [errorIndex, setErrorIndex] = useState<number | null>(null);
 
     const startTime = useRef<number | null>(null);
     const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -98,9 +99,13 @@ const App: React.FC = () => {
 
     const inputRef = useRef<HTMLInputElement>(null);
     const keypressSound = useRef<HTMLAudioElement | null>(null);
+    const errorSound = useRef<HTMLAudioElement | null>(null);
+    const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
     useEffect(() => {
         keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+        errorSound.current = new Audio("data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQYYAAAAAP//AAAA//8A//8A/v/9AP7//QD+/wEA/v8A/v/9AP8A");
     }, []);
 
     // Load saved settings from localStorage on initial render
@@ -215,12 +220,25 @@ const App: React.FC = () => {
         const value = e.target.value;
 
         if (phase === TypePhase.Finished) return;
+
+        if (errorTimeoutRef.current) {
+            clearTimeout(errorTimeoutRef.current);
+        }
+
+        const playErrorFeedback = (index: number) => {
+            if (soundEnabled && errorSound.current) {
+                errorSound.current.currentTime = 0;
+                errorSound.current.play().catch(err => console.error("Error playing sound:", err));
+            }
+            setErrorIndex(index);
+            errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
+        };
         
         if (mode === 'accuracy') {
             const prospectiveText = language === 'bengali' ? translateToAvro(value) : value;
             if (!textToType.startsWith(prospectiveText)) {
-                // Here you could add an error sound or visual feedback
-                return; // Prevents incorrect input
+                playErrorFeedback(prospectiveText.length - 1);
+                return;
             }
         }
 
@@ -237,6 +255,21 @@ const App: React.FC = () => {
                     }
                 }
             }, 500);
+        }
+        
+        // Check for new errors on character addition
+        if (value.length > rawInput.length) {
+            const currentText = language === 'bengali' ? translateToAvro(value) : value;
+            const lastTypedCharIndex = currentText.length - 1;
+            
+            if (lastTypedCharIndex < textToType.length && currentText[lastTypedCharIndex] !== textToType[lastTypedCharIndex]) {
+                playErrorFeedback(lastTypedCharIndex);
+            } else {
+                setErrorIndex(null);
+            }
+        } else {
+            // Character deleted
+            setErrorIndex(null);
         }
         
         setRawInput(value);
@@ -444,9 +477,15 @@ const App: React.FC = () => {
                                     const isCursor = index === userInput.length && phase !== TypePhase.Finished;
 
                                     if (index < userInput.length) {
-                                        charClassName = char === userInput[index] ? 'text-[var(--text-correct)]' : 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
+                                        charClassName = char === userInput[index] 
+                                            ? 'text-[var(--text-correct)]' 
+                                            : 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
                                     } else {
                                         charClassName = 'text-[var(--text-muted)]';
+                                    }
+
+                                    if (index === errorIndex) {
+                                        charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
                                     }
                                     
                                     const cursorClassName = isCursor ? (char === ' ' ? 'cursor-blink-space' : 'cursor-blink') : '';
