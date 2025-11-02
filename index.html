@@ -7,12 +7,12 @@
     <title>Typing Speed Test</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      @keyframes blink {
+      @keyframes pulse {
         50% { border-color: transparent; }
       }
       .cursor-blink {
         border-left: 2px solid #38bdf8; /* sky-400 */
-        animation: blink 1s step-end infinite;
+        animation: pulse 1.2s ease-in-out infinite;
         margin-left: -2px; /* Prevents layout shift */
       }
        .cursor-blink-space {
@@ -25,7 +25,7 @@
         bottom: 20%;
         left: 0;
         border-left: 2px solid #38bdf8;
-        animation: blink 1s step-end infinite;
+        animation: pulse 1.2s ease-in-out infinite;
       }
     </style>
   <script type="importmap">
