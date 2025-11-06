@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { generateTypingText } from './services/geminiService';
 import { translate as translateToAvro } from './services/avroLayout';
 import StatsCard from './components/StatsCard';
@@ -206,6 +207,19 @@ const App: React.FC = () => {
     const errorSound = useRef<HTMLAudioElement | null>(null);
     const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Grapheme splitter for correct character handling in complex scripts
+    // FIX: Cast Intl to `any` to resolve "Property 'Segmenter' does not exist on type 'typeof Intl'".
+    // This is a workaround for outdated TypeScript lib definitions.
+    const graphemeSplitter = useMemo(() => new (Intl as any).Segmenter(), []);
+    const textGraphemes = useMemo(() => 
+        textToType ? [...graphemeSplitter.segment(textToType)].map(s => s.segment) : [], 
+        [textToType, graphemeSplitter]
+    );
+    const userInputGraphemes = useMemo(() => 
+        userInput ? [...graphemeSplitter.segment(userInput)].map(s => s.segment) : [], 
+        [userInput, graphemeSplitter]
+    );
+
     useEffect(() => {
         keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
         errorSound.current = new Audio("data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQYYAAAAAP//AAAA//8A//8A/v/9AP7//QD+/wEA/v8A/v/9AP8A");
@@ -362,6 +376,7 @@ const App: React.FC = () => {
 
         if (errorTimeoutRef.current) {
             clearTimeout(errorTimeoutRef.current);
+            errorTimeoutRef.current = null;
         }
 
         const playErrorFeedback = (index: number) => {
@@ -373,10 +388,12 @@ const App: React.FC = () => {
             errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
         };
         
+        const currentText = language === 'bengali' ? translateToAvro(value) : value;
+
         if (mode === 'accuracy') {
-            const prospectiveText = language === 'bengali' ? translateToAvro(value) : value;
-            if (!textToType.startsWith(prospectiveText)) {
-                playErrorFeedback(prospectiveText.length - 1);
+            if (!textToType.startsWith(currentText)) {
+                const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
+                playErrorFeedback(currentGraphemes.length - 1);
                 return;
             }
         }
@@ -397,11 +414,14 @@ const App: React.FC = () => {
         }
         
         if (value.length > rawInput.length) {
-            const currentText = language === 'bengali' ? translateToAvro(value) : value;
-            const lastTypedCharIndex = currentText.length - 1;
+            const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
+            const lastTypedGraphemeIndex = currentGraphemes.length - 1;
             
-            if (lastTypedCharIndex < textToType.length && currentText[lastTypedCharIndex] !== textToType[lastTypedCharIndex]) {
-                playErrorFeedback(lastTypedCharIndex);
+            if (
+                lastTypedGraphemeIndex < textGraphemes.length && 
+                currentGraphemes[lastTypedGraphemeIndex] !== textGraphemes[lastTypedGraphemeIndex]
+            ) {
+                playErrorFeedback(lastTypedGraphemeIndex);
             } else {
                 setErrorIndex(null);
             }
@@ -424,25 +444,30 @@ const App: React.FC = () => {
             setUserInput(rawInput);
         }
 
-        if (currentText.length >= textToType.length) {
+        const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
+        if (currentGraphemes.length >= textGraphemes.length) {
             finishTest();
         }
-    }, [rawInput, language, textToType.length, phase, finishTest]);
+    }, [rawInput, language, textGraphemes, phase, finishTest, graphemeSplitter]);
 
     useEffect(() => {
         if (phase === TypePhase.Typing || phase === TypePhase.Finished) {
-            const typedChars = userInput.length;
+            const typedGraphemeCount = userInputGraphemes.length;
             let currentErrors = 0;
-            
-            for (let i = 0; i < typedChars; i++) {
-                if (userInput[i] !== textToType[i]) {
+            let correctCharsForWPM = 0;
+
+            for (let i = 0; i < typedGraphemeCount; i++) {
+                if (i >= textGraphemes.length || userInputGraphemes[i] !== textGraphemes[i]) {
                     currentErrors++;
+                } else {
+                    // WPM is based on characters of correctly typed graphemes
+                    correctCharsForWPM += userInputGraphemes[i].length;
                 }
             }
             setErrors(currentErrors);
 
-            const correctChars = typedChars - currentErrors;
-            const currentAccuracy = typedChars > 0 ? (correctChars / typedChars) * 100 : 100;
+            const correctGraphemes = typedGraphemeCount - currentErrors;
+            const currentAccuracy = typedGraphemeCount > 0 ? (correctGraphemes / typedGraphemeCount) * 100 : 100;
             setAccuracy(currentAccuracy);
             
             const words = userInput.trim() === '' ? [] : userInput.trim().split(/\s+/);
@@ -450,13 +475,15 @@ const App: React.FC = () => {
 
             const effectiveTime = phase === TypePhase.Finished ? Math.max(elapsedTime, 1) : elapsedTime;
             if (effectiveTime > 0) {
-                const wordsTyped = correctChars / 5;
+                const wordsTyped = correctCharsForWPM / 5; // Standard WPM definition
                 const minutes = effectiveTime / 60;
                 const currentWpm = Math.round(wordsTyped / minutes);
                 setWpm(currentWpm);
+            } else {
+                setWpm(0);
             }
         }
-    }, [userInput, elapsedTime, textToType, phase]);
+    }, [userInputGraphemes, textGraphemes, elapsedTime, phase, userInput]);
     
     useEffect(() => {
         if (phase === TypePhase.Finished) {
@@ -622,12 +649,12 @@ const App: React.FC = () => {
                     ) : (
                         <>
                             <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
-                                {textToType.split('').map((char, index) => {
+                                {textGraphemes.map((grapheme, index) => {
                                     let charClassName;
-                                    const isCursor = index === userInput.length && phase !== TypePhase.Finished;
+                                    const isCursor = index === userInputGraphemes.length && phase !== TypePhase.Finished;
 
-                                    if (index < userInput.length) {
-                                        charClassName = char === userInput[index] 
+                                    if (index < userInputGraphemes.length) {
+                                        charClassName = grapheme === userInputGraphemes[index] 
                                             ? 'text-[var(--text-correct)]' 
                                             : 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
                                     } else {
@@ -638,14 +665,17 @@ const App: React.FC = () => {
                                         charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
                                     }
                                     
-                                    const cursorClassName = isCursor ? (char === ' ' ? 'cursor-blink-space' : 'cursor-blink') : '';
+                                    const cursorClassName = isCursor ? (grapheme === ' ' ? 'cursor-blink-space' : 'cursor-blink') : '';
 
                                     return (
                                         <span key={index} className={`${charClassName} ${cursorClassName}`}>
-                                            {char === ' ' ? '\u00A0' : char}
+                                            {grapheme === ' ' ? '\u00A0' : grapheme}
                                         </span>
                                     );
                                 })}
+                                {phase !== TypePhase.Finished && userInputGraphemes.length >= textGraphemes.length && (
+                                    <span className="cursor-blink"></span>
+                                )}
                             </p>
                             <input
                                 ref={inputRef}
@@ -677,7 +707,7 @@ const App: React.FC = () => {
                             aria-label="Show Avro Chart"
                             className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
                         >
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                         </button>
                     )}
                     <button 
@@ -688,7 +718,7 @@ const App: React.FC = () => {
                         {soundEnabled ? (
                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.858 15.858a5 5 0 010-7.072m2.829 9.9a9 9 0 010-12.728M12 6v12" /></svg>
                         ) : (
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="http://www.w3.org/2000/svg" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15.586a5 5 0 010-7.072m9.9 7.072a5 5 0 000-7.072m-4.243 4.242L12 12m0 0l-1.414-1.414m1.414 1.414L13.414 12m-1.414 0l-1.414 1.414m1.414-1.414L13.414 13.414M12 6v12" /></svg>
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15.586a5 5 0 010-7.072m9.9 7.072a5 5 0 000-7.072m-4.243 4.242L12 12m0 0l-1.414-1.414m1.414 1.414L13.414 12m-1.414 0l-1.414 1.414m1.414-1.414L13.414 13.414M12 6v12" /></svg>
                         )}
                     </button>
                     <button 
