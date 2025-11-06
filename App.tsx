@@ -67,6 +67,108 @@ const themes = {
   },
 };
 
+type ActionKey = 'restart' | 'toggleSound' | 'toggleAvroChart';
+
+const DEFAULT_SHORTCUTS: Record<ActionKey, string> = {
+    restart: 'Control+Shift+R',
+    toggleSound: 'Control+Shift+S',
+    toggleAvroChart: 'Control+Shift+A',
+};
+
+const formatShortcut = (e: KeyboardEvent | React.KeyboardEvent): string => {
+    const key = e.key.toLowerCase() === ' ' ? 'Space' : e.key;
+
+    if (['control', 'alt', 'shift', 'meta'].includes(key.toLowerCase())) {
+        return '';
+    }
+
+    const parts = [];
+    if (e.ctrlKey) parts.push('Control');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Meta');
+    
+    // Don't save the modifier key itself as the main key
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+        parts.push(e.key.toUpperCase());
+    }
+    
+    return parts.length > 1 ? parts.join('+') : '';
+};
+
+const ShortcutsModal: React.FC<{
+    currentShortcuts: Record<ActionKey, string>;
+    onClose: () => void;
+    onSave: (newShortcuts: Record<ActionKey, string>) => void;
+    language: string;
+}> = ({ currentShortcuts, onClose, onSave, language }) => {
+    const [tempShortcuts, setTempShortcuts] = useState(currentShortcuts);
+    const [listeningFor, setListeningFor] = useState<ActionKey | null>(null);
+
+    const handleKeyDown = (e: React.KeyboardEvent, action: ActionKey) => {
+        e.preventDefault();
+        const newShortcut = formatShortcut(e);
+        if (newShortcut) {
+            const isDuplicate = Object.values(tempShortcuts).some(
+                (sc, i) => sc === newShortcut && Object.keys(tempShortcuts)[i] !== action
+            );
+
+            if (isDuplicate) {
+                alert(`Shortcut "${newShortcut}" is already in use.`);
+            } else {
+                setTempShortcuts(prev => ({ ...prev, [action]: newShortcut }));
+            }
+        }
+        setListeningFor(null);
+    };
+
+    const actionLabels: Record<ActionKey, string> = {
+        restart: 'Restart Test',
+        toggleSound: 'Toggle Sound',
+        toggleAvroChart: 'Show/Hide Avro Chart',
+    };
+
+    let actions: ActionKey[] = ['restart', 'toggleSound'];
+    if (language === 'bengali') {
+        actions.push('toggleAvroChart');
+    }
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
+            <div className="bg-[var(--bg-secondary)] p-6 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">Customize Shortcuts</h2>
+                    <button onClick={onClose} className="p-1 rounded-full text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]" aria-label="Close shortcuts modal">
+                       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div className="space-y-4">
+                    {actions.map(action => (
+                        <div key={action} className="flex items-center justify-between">
+                            <label htmlFor={`shortcut-${action}`} className="text-[var(--text-secondary)]">{actionLabels[action]}</label>
+                            <input
+                                id={`shortcut-${action}`}
+                                type="text"
+                                readOnly
+                                value={listeningFor === action ? 'Press a combination...' : tempShortcuts[action]}
+                                onFocus={() => setListeningFor(action)}
+                                onBlur={() => setListeningFor(null)}
+                                onKeyDown={(e) => handleKeyDown(e, action)}
+                                className="w-48 bg-[var(--bg-tertiary)] rounded-md p-2 text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-secondary)]"
+                            />
+                        </div>
+                    ))}
+                </div>
+                <div className="flex justify-end gap-4 mt-8">
+                    <button onClick={onClose} className="px-4 py-2 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-bold rounded-lg hover:bg-[var(--bg-tertiary-hover)] transition-colors">Cancel</button>
+                    <button onClick={() => onSave(tempShortcuts)} className="px-4 py-2 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] font-bold rounded-lg hover:bg-[var(--accent-secondary-hover)] transition-colors">Save</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const App: React.FC = () => {
     const [phase, setPhase] = useState<TypePhase>(TypePhase.Idle);
     const [textToType, setTextToType] = useState<string>('');
@@ -93,39 +195,42 @@ const App: React.FC = () => {
     const [errors, setErrors] = useState<number>(0);
     const [wordCount, setWordCount] = useState<number>(0);
 
-    // State for personal best scores
     const [bestWpm, setBestWpm] = useState<number>(0);
     const [bestAccuracy, setBestAccuracy] = useState<number>(0);
+    
+    const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
+    const [shortcuts, setShortcuts] = useState<Record<ActionKey, string>>(DEFAULT_SHORTCUTS);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const keypressSound = useRef<HTMLAudioElement | null>(null);
     const errorSound = useRef<HTMLAudioElement | null>(null);
     const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-
     useEffect(() => {
         keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
         errorSound.current = new Audio("data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQYYAAAAAP//AAAA//8A//8A/v/9AP7//QD+/wEA/v8A/v/9AP8A");
     }, []);
 
-    // Load saved settings from localStorage on initial render
     useEffect(() => {
         const storedBestWpm = localStorage.getItem('bestWpm');
         const storedBestAccuracy = localStorage.getItem('bestAccuracy');
         const storedTheme = localStorage.getItem('typingTheme');
+        const storedShortcuts = localStorage.getItem('keyboardShortcuts');
 
-        if (storedBestWpm) {
-            setBestWpm(parseInt(storedBestWpm, 10) || 0);
-        }
-        if (storedBestAccuracy) {
-            setBestAccuracy(parseFloat(storedBestAccuracy) || 0);
-        }
-        if (storedTheme && themes[storedTheme]) {
-            setTheme(storedTheme);
+        if (storedBestWpm) setBestWpm(parseInt(storedBestWpm, 10) || 0);
+        if (storedBestAccuracy) setBestAccuracy(parseFloat(storedBestAccuracy) || 0);
+        if (storedTheme && themes[storedTheme]) setTheme(storedTheme);
+        if (storedShortcuts) {
+            try {
+                const parsed = JSON.parse(storedShortcuts);
+                setShortcuts(prev => ({ ...prev, ...parsed }));
+            } catch (e) {
+                console.error("Failed to parse shortcuts from localStorage", e);
+                localStorage.removeItem('keyboardShortcuts');
+            }
         }
     }, []);
 
-    // Apply theme changes
     useEffect(() => {
         const currentTheme = themes[theme];
         const root = document.documentElement;
@@ -181,9 +286,9 @@ const App: React.FC = () => {
         fetchText();
     }, [fetchText]);
 
-    const handleRestart = () => {
+    const handleRestart = useCallback(() => {
         fetchText();
-    };
+    }, [fetchText]);
     
     const finishTest = useCallback(() => {
         if (phase !== TypePhase.Typing) return;
@@ -202,6 +307,40 @@ const App: React.FC = () => {
             setElapsedTime(finalTime);
         }
     }, [phase, duration, mode]);
+
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || showShortcutsModal) {
+                return;
+            }
+
+            const pressedShortcut = formatShortcut(e);
+            if (!pressedShortcut) return;
+
+            const action = (Object.keys(shortcuts) as ActionKey[]).find(key => shortcuts[key] === pressedShortcut);
+
+            if (action) {
+                e.preventDefault();
+                switch (action) {
+                    case 'restart':
+                        handleRestart();
+                        break;
+                    case 'toggleSound':
+                        setSoundEnabled(prev => !prev);
+                        break;
+                    case 'toggleAvroChart':
+                        if (language === 'bengali') {
+                            setShowAvroChart(prev => !prev);
+                        }
+                        break;
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [shortcuts, showShortcutsModal, language, handleRestart]);
 
     const playSound = () => {
         if (soundEnabled && keypressSound.current) {
@@ -257,7 +396,6 @@ const App: React.FC = () => {
             }, 500);
         }
         
-        // Check for new errors on character addition
         if (value.length > rawInput.length) {
             const currentText = language === 'bengali' ? translateToAvro(value) : value;
             const lastTypedCharIndex = currentText.length - 1;
@@ -268,7 +406,6 @@ const App: React.FC = () => {
                 setErrorIndex(null);
             }
         } else {
-            // Character deleted
             setErrorIndex(null);
         }
         
@@ -334,6 +471,12 @@ const App: React.FC = () => {
         }
     }, [phase, wpm, accuracy, bestWpm, bestAccuracy]);
 
+    const handleSaveShortcuts = (newShortcuts: Record<ActionKey, string>) => {
+        setShortcuts(newShortcuts);
+        localStorage.setItem('keyboardShortcuts', JSON.stringify(newShortcuts));
+        setShowShortcutsModal(false);
+    };
+
     const focusInput = () => {
       inputRef.current?.focus();
     }
@@ -368,7 +511,6 @@ const App: React.FC = () => {
         }
     }
 
-
     const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode; disabled?: boolean; }> = 
         ({ value, state, onClick, children, disabled }) => (
         <button 
@@ -382,6 +524,14 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 font-mono transition-colors duration-300">
+            {showShortcutsModal && (
+                <ShortcutsModal 
+                    currentShortcuts={shortcuts}
+                    onClose={() => setShowShortcutsModal(false)}
+                    onSave={handleSaveShortcuts}
+                    language={language}
+                />
+            )}
             <main className="w-full max-w-4xl mx-auto flex flex-col items-center">
                 <h1 className="text-4xl sm:text-5xl font-bold text-[var(--accent-primary)] mb-4 text-center">Typing Speed Test</h1>
                 <p className="text-[var(--text-secondary)] mb-6 text-center">Type the text below as fast and accurately as you can.</p>
@@ -540,6 +690,13 @@ const App: React.FC = () => {
                         ) : (
                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="http://www.w3.org/2000/svg" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15.586a5 5 0 010-7.072m9.9 7.072a5 5 0 000-7.072m-4.243 4.242L12 12m0 0l-1.414-1.414m1.414 1.414L13.414 12m-1.414 0l-1.414 1.414m1.414-1.414L13.414 13.414M12 6v12" /></svg>
                         )}
+                    </button>
+                    <button 
+                        onClick={() => setShowShortcutsModal(true)}
+                        aria-label="Customize keyboard shortcuts"
+                        className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                     </button>
                 </div>
                 
