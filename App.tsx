@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { generateTypingText } from './services/geminiService';
 import { translate as translateToAvro } from './services/avroLayout';
@@ -179,8 +178,6 @@ const App: React.FC = () => {
     
     const [language, setLanguage] = useState('english');
     const [difficulty, setDifficulty] = useState('medium');
-    const [mode, setMode] = useState<'standard' | 'endurance' | 'accuracy'>('standard');
-    const [duration, setDuration] = useState<number>(60);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
@@ -192,6 +189,7 @@ const App: React.FC = () => {
 
     const [elapsedTime, setElapsedTime] = useState<number>(0);
     const [wpm, setWpm] = useState<number>(0);
+    const [rawWpm, setRawWpm] = useState<number>(0);
     const [accuracy, setAccuracy] = useState<number>(100);
     const [errors, setErrors] = useState<number>(0);
     const [wordCount, setWordCount] = useState<number>(0);
@@ -207,9 +205,6 @@ const App: React.FC = () => {
     const errorSound = useRef<HTMLAudioElement | null>(null);
     const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Grapheme splitter for correct character handling in complex scripts
-    // FIX: Cast Intl to `any` to resolve "Property 'Segmenter' does not exist on type 'typeof Intl'".
-    // This is a workaround for outdated TypeScript lib definitions.
     const graphemeSplitter = useMemo(() => new (Intl as any).Segmenter(), []);
     const textGraphemes = useMemo(() => 
         textToType ? [...graphemeSplitter.segment(textToType)].map(s => s.segment) : [], 
@@ -271,6 +266,7 @@ const App: React.FC = () => {
         setRawInput('');
         setElapsedTime(0);
         setWpm(0);
+        setRawWpm(0);
         setAccuracy(100);
         setErrors(0);
         setWordCount(0);
@@ -285,8 +281,8 @@ const App: React.FC = () => {
         setLoading(true);
         resetState();
         try {
-            const newText = generateTypingText(language, difficulty, mode);
-            setTextToType(newText);
+            const newText = generateTypingText(language, difficulty);
+            setTextToType(newText.trim());
         } catch (error) {
             console.error("Failed to generate text:", error);
             setTextToType("The quick brown fox jumps over the lazy dog. Please try refreshing the page.");
@@ -294,7 +290,7 @@ const App: React.FC = () => {
             setLoading(false);
             setTimeout(() => inputRef.current?.focus(), 50);
         }
-    }, [language, difficulty, mode, resetState]);
+    }, [language, difficulty, resetState]);
 
     useEffect(() => {
         fetchText();
@@ -303,24 +299,6 @@ const App: React.FC = () => {
     const handleRestart = useCallback(() => {
         fetchText();
     }, [fetchText]);
-    
-    const finishTest = useCallback(() => {
-        if (phase !== TypePhase.Typing) return;
-    
-        if (timerInterval.current) {
-            clearInterval(timerInterval.current);
-            timerInterval.current = null;
-        }
-    
-        setPhase(TypePhase.Finished);
-    
-        if (startTime.current) {
-            const finalTime = mode === 'endurance' 
-                ? (Date.now() - startTime.current) / 1000
-                : Math.min((Date.now() - startTime.current) / 1000, duration);
-            setElapsedTime(finalTime);
-        }
-    }, [phase, duration, mode]);
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -369,6 +347,41 @@ const App: React.FC = () => {
         }
     };
 
+    const calculateStats = useCallback((currentInput: string, timeElapsed: number) => {
+        if (timeElapsed <= 0) return;
+
+        const currentGraphemes = [...graphemeSplitter.segment(currentInput)].map(s => s.segment);
+        const typedGraphemeCount = currentGraphemes.length;
+        
+        let currentErrors = 0;
+        let correctCharsForWPM = 0;
+
+        for (let i = 0; i < typedGraphemeCount; i++) {
+            if (i >= textGraphemes.length || currentGraphemes[i] !== textGraphemes[i]) {
+                currentErrors++;
+            } else {
+                correctCharsForWPM += currentGraphemes[i].length;
+            }
+        }
+        
+        setErrors(currentErrors);
+
+        const correctGraphemes = typedGraphemeCount - currentErrors;
+        const currentAccuracy = typedGraphemeCount > 0 ? (correctGraphemes / typedGraphemeCount) * 100 : 100;
+        setAccuracy(currentAccuracy);
+        
+        const words = currentInput.trim() === '' ? [] : currentInput.trim().split(/\s+/);
+        setWordCount(words.length);
+
+        const minutes = timeElapsed / 60;
+        const netWpm = Math.round((correctCharsForWPM / 5) / minutes);
+        const currentRawWpm = Math.round((currentInput.length / 5) / minutes);
+        
+        setWpm(Math.max(0, netWpm));
+        setRawWpm(Math.max(0, currentRawWpm));
+
+    }, [graphemeSplitter, textGraphemes]);
+
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
 
@@ -388,31 +401,22 @@ const App: React.FC = () => {
             errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
         };
         
-        const currentText = language === 'bengali' ? translateToAvro(value) : value;
-
-        if (mode === 'accuracy') {
-            if (!textToType.startsWith(currentText)) {
-                const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
-                playErrorFeedback(currentGraphemes.length - 1);
-                return;
-            }
-        }
-
         if (phase === TypePhase.Idle && value.length > 0) {
             setPhase(TypePhase.Typing);
             startTime.current = Date.now();
             timerInterval.current = setInterval(() => {
-                if(startTime.current) {
-                    const currentElapsedTime = (Date.now() - startTime.current) / 1000;
-                    if (mode !== 'endurance' && currentElapsedTime >= duration) {
-                        finishTest();
-                    } else {
-                       setElapsedTime(currentElapsedTime);
-                    }
+                if (startTime.current) {
+                    setElapsedTime((Date.now() - startTime.current) / 1000);
                 }
-            }, 500);
+            }, 100);
         }
         
+        const currentText = language === 'bengali' ? translateToAvro(value) : value;
+        
+        // Normalize to handle potential unicode differences (NFC)
+        const normalizedCurrent = currentText.normalize('NFC');
+        const normalizedTarget = textToType.normalize('NFC');
+
         if (value.length > rawInput.length) {
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
@@ -430,61 +434,42 @@ const App: React.FC = () => {
         }
         
         setRawInput(value);
+        setUserInput(currentText);
+
+        // Immediate completion check
+        if (normalizedCurrent === normalizedTarget) {
+            if (timerInterval.current) {
+                clearInterval(timerInterval.current);
+                timerInterval.current = null;
+            }
+            if (startTime.current) {
+                const finalTime = (Date.now() - startTime.current) / 1000;
+                setElapsedTime(finalTime);
+                
+                // Force perfect final stats on completion
+                const totalChars = textToType.length;
+                const minutes = finalTime / 60;
+                const finalWpm = Math.round((totalChars / 5) / minutes);
+                
+                setWpm(finalWpm);
+                setRawWpm(finalWpm);
+                setAccuracy(100);
+                setErrors(0);
+                setWordCount(textToType.split(/\s+/).length);
+            }
+            setPhase(TypePhase.Finished);
+            inputRef.current?.blur();
+        }
     };
-
-    useEffect(() => {
-        if (phase !== TypePhase.Typing) return;
-
-        let currentText = rawInput;
-        if (language === 'bengali') {
-            const translated = translateToAvro(rawInput);
-            setUserInput(translated);
-            currentText = translated;
-        } else {
-            setUserInput(rawInput);
-        }
-
-        const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
-        if (currentGraphemes.length >= textGraphemes.length) {
-            finishTest();
-        }
-    }, [rawInput, language, textGraphemes, phase, finishTest, graphemeSplitter]);
-
-    useEffect(() => {
-        if (phase === TypePhase.Typing || phase === TypePhase.Finished) {
-            const typedGraphemeCount = userInputGraphemes.length;
-            let currentErrors = 0;
-            let correctCharsForWPM = 0;
-
-            for (let i = 0; i < typedGraphemeCount; i++) {
-                if (i >= textGraphemes.length || userInputGraphemes[i] !== textGraphemes[i]) {
-                    currentErrors++;
-                } else {
-                    // WPM is based on characters of correctly typed graphemes
-                    correctCharsForWPM += userInputGraphemes[i].length;
-                }
-            }
-            setErrors(currentErrors);
-
-            const correctGraphemes = typedGraphemeCount - currentErrors;
-            const currentAccuracy = typedGraphemeCount > 0 ? (correctGraphemes / typedGraphemeCount) * 100 : 100;
-            setAccuracy(currentAccuracy);
-            
-            const words = userInput.trim() === '' ? [] : userInput.trim().split(/\s+/);
-            setWordCount(words.length);
-
-            const effectiveTime = phase === TypePhase.Finished ? Math.max(elapsedTime, 1) : elapsedTime;
-            if (effectiveTime > 0) {
-                const wordsTyped = correctCharsForWPM / 5; // Standard WPM definition
-                const minutes = effectiveTime / 60;
-                const currentWpm = Math.round(wordsTyped / minutes);
-                setWpm(currentWpm);
-            } else {
-                setWpm(0);
-            }
-        }
-    }, [userInputGraphemes, textGraphemes, elapsedTime, phase, userInput]);
     
+    // Dedicated effect for stats update during typing
+    useEffect(() => {
+        if (phase === TypePhase.Typing) {
+            calculateStats(userInput, elapsedTime);
+        }
+    }, [elapsedTime, userInput, phase, calculateStats]);
+
+    // Effect for saving best scores
     useEffect(() => {
         if (phase === TypePhase.Finished) {
             if (wpm > bestWpm) {
@@ -508,35 +493,7 @@ const App: React.FC = () => {
       inputRef.current?.focus();
     }
     
-    let timeValue: string | number = 0;
-    let timeUnit: string | undefined = 's';
-
-    if (mode === 'endurance') {
-        switch (phase) {
-            case TypePhase.Idle:
-                timeValue = '∞';
-                timeUnit = undefined;
-                break;
-            case TypePhase.Typing:
-                timeValue = Math.floor(elapsedTime);
-                break;
-            case TypePhase.Finished:
-                timeValue = elapsedTime.toFixed(0);
-                break;
-        }
-    } else { // Standard or Accuracy
-        switch (phase) {
-            case TypePhase.Idle:
-                timeValue = duration;
-                break;
-            case TypePhase.Typing:
-                timeValue = Math.max(0, duration - Math.floor(elapsedTime));
-                break;
-            case TypePhase.Finished:
-                timeValue = elapsedTime.toFixed(0);
-                break;
-        }
-    }
+    const timeValue = elapsedTime.toFixed(2);
 
     const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode; disabled?: boolean; }> = 
         ({ value, state, onClick, children, disabled }) => (
@@ -579,41 +536,13 @@ const App: React.FC = () => {
                            <OptionButton value="hard" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Hard</OptionButton>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-[var(--text-secondary)]">Mode:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
-                            <OptionButton value="standard" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Standard</OptionButton>
-                            <OptionButton value="endurance" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Endurance</OptionButton>
-                            <OptionButton value="accuracy" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Accuracy</OptionButton>
-                        </div>
-                    </div>
-                    {mode !== 'endurance' && (
-                        <div className="flex items-center gap-2">
-                            <span className="text-[var(--text-secondary)]">Duration (s):</span>
-                            <input
-                                type="number"
-                                value={duration}
-                                min="10"
-                                step="10"
-                                onChange={(e) => {
-                                    if (phase === TypePhase.Typing) return;
-                                    const newDuration = parseInt(e.target.value, 10);
-                                    if (!isNaN(newDuration) && newDuration > 0) {
-                                        setDuration(newDuration);
-                                        resetState();
-                                    }
-                                }}
-                                className="w-24 bg-[var(--bg-secondary)] rounded-lg p-2 text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-secondary)] disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={phase === TypePhase.Typing}
-                            />
-                        </div>
-                    )}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
+                    <StatsCard label="Raw WPM" value={rawWpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
-                    <StatsCard label="Time" value={timeValue} unit={timeUnit} />
+                    <StatsCard label="Time" value={timeValue} unit="s" />
                     <StatsCard label="Errors" value={errors} />
                     <StatsCard label="Word Count" value={wordCount} />
                     <StatsCard label="Best WPM" value={bestWpm} />

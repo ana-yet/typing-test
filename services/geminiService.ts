@@ -1,4 +1,3 @@
-
 // The function is updated to use a predefined set of texts instead of an API.
 // It randomly selects a passage based on the chosen language and difficulty.
 
@@ -352,7 +351,7 @@ easy: [
 type Language = 'english' | 'bengali';
 type Difficulty = 'easy' | 'medium' | 'hard';
 
-export function generateTypingText(language: string, difficulty: string, mode: string): string {
+export function generateTypingText(language: string, difficulty: string): string {
     const lang = language as Language;
     const diff = difficulty as Difficulty;
 
@@ -362,19 +361,7 @@ export function generateTypingText(language: string, difficulty: string, mode: s
         // Fallback text in case of an invalid language or difficulty
         return "The quick brown fox jumps over the lazy dog. This is a default sentence if the requested text is not found.";
     }
-
-    if (mode === 'endurance') {
-        // Create a longer text by combining 3 unique passages for variety
-        const uniquePassages = [...passages];
-        let longText = '';
-        const count = Math.min(3, uniquePassages.length); // Ensure we don't try to pick more than available
-        for (let i = 0; i < count; i++) {
-            const randomIndex = Math.floor(Math.random() * uniquePassages.length);
-            longText += (i > 0 ? ' ' : '') + uniquePassages.splice(randomIndex, 1)[0];
-        }
-        return longText;
-    } else {
-        const randomIndex = Math.floor(Math.random() * passages.length);
-        return passages[randomIndex];
-    }
+    
+    const randomIndex = Math.floor(Math.random() * passages.length);
+    return passages[randomIndex];
 }
