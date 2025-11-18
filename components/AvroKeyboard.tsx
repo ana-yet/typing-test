@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface KeyProps {
@@ -9,16 +10,36 @@ interface KeyProps {
 }
 
 const Key: React.FC<KeyProps> = ({ en, bn, bnShift, className = '', active }) => {
-  const baseClasses = "h-12 rounded-md flex flex-col items-center justify-center p-1 border-b-4 transition-all duration-75 font-sans";
+  const baseClasses = "h-12 rounded-md flex flex-col items-center justify-center p-1 border-b-4 transition-all duration-75 font-sans relative";
   const dynamicClasses = active 
-    ? "bg-[var(--accent-secondary)] border-[var(--accent-primary)] transform -translate-y-px" 
+    ? "bg-[var(--accent-secondary)] border-[var(--accent-primary)] transform -translate-y-px shadow-sm" 
     : "bg-[var(--bg-tertiary)] border-[var(--border-key)] hover:bg-[var(--bg-tertiary-hover)]";
   
+  // Helper to generate tooltip text
+  const getTooltip = (targetChar: string, isShift: boolean) => {
+      if (!targetChar) return undefined;
+      if (en.length > 1) return `Type ${en}`; // Special keys
+      return isShift ? `Type Shift + ${en}` : `Type ${en}`;
+  };
+
+  const keyLabel = en === ' ' ? 'SPACE' : en.toUpperCase();
+  const labelSizeClass = en.length > 1 ? 'text-xs sm:text-sm' : 'text-lg';
+
   return (
-    <div className={`${baseClasses} ${dynamicClasses} ${className}`}>
-      <span className="text-sm text-[var(--text-muted)] self-end px-1">{bnShift}</span>
-      <span className="font-bold text-lg text-[var(--text-primary)] -mt-3">{en.toUpperCase()}</span>
-      <span className="text-sm text-[var(--accent-primary-faded)] self-start px-1">{bn}</span>
+    <div className={`${baseClasses} ${dynamicClasses} ${className}`} title={en.length > 1 ? en : undefined}>
+      <span 
+        className={`text-sm text-[var(--text-muted)] self-end px-1 transition-colors ${bnShift ? 'cursor-help hover:text-[var(--text-primary)] hover:font-bold' : ''}`}
+        title={getTooltip(bnShift || '', true)}
+      >
+        {bnShift}
+      </span>
+      <span className={`font-bold text-[var(--text-primary)] -mt-3 select-none ${labelSizeClass}`}>{keyLabel}</span>
+      <span 
+        className={`text-sm text-[var(--accent-primary-faded)] self-start px-1 transition-colors ${bn ? 'cursor-help hover:text-[var(--accent-primary)] hover:font-bold' : ''}`}
+        title={getTooltip(bn, false)}
+      >
+        {bn}
+      </span>
     </div>
   );
 };
@@ -69,13 +90,17 @@ const keyboardLayout = [
 
 const AvroKeyboard: React.FC<{ activeKey: string; onClose: () => void }> = ({ activeKey, onClose }) => {
     return (
-        <div className="w-full max-w-4xl mt-8 p-4 bg-[var(--bg-secondary)] rounded-lg shadow-lg animate-fade-in">
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-[var(--text-secondary)]">Avro Phonetic Chart</h2>
+        <div className="w-full max-w-4xl mt-8 p-4 bg-[var(--bg-secondary)] rounded-lg shadow-lg animate-fade-in border border-[var(--bg-tertiary)]">
+            <div className="flex justify-between items-center mb-4 border-b border-[var(--bg-tertiary)] pb-2">
+                <div className="flex items-center gap-2">
+                     <h2 className="text-lg font-bold text-[var(--text-primary)]">Avro Phonetic Chart</h2>
+                     <span className="text-xs text-[var(--text-secondary)] hidden sm:inline">(Hover over characters to see keys)</span>
+                </div>
                 <button 
                     onClick={onClose} 
-                    className="p-1 rounded-full hover:bg-[var(--bg-tertiary)] transition-colors"
+                    className="p-2 rounded-full hover:bg-[var(--bg-incorrect)] hover:text-white text-[var(--text-secondary)] transition-colors"
                     aria-label="Close chart"
+                    title="Close"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

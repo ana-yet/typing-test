@@ -88,7 +88,6 @@ const formatShortcut = (e: KeyboardEvent | React.KeyboardEvent): string => {
     if (e.shiftKey) parts.push('Shift');
     if (e.metaKey) parts.push('Meta');
     
-    // Don't save the modifier key itself as the main key
     if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
         parts.push(e.key.toUpperCase());
     }
@@ -168,6 +167,15 @@ const ShortcutsModal: React.FC<{
     );
 };
 
+const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
+    <div className="w-full max-w-3xl h-2 bg-[var(--bg-tertiary)] rounded-full mb-8 overflow-hidden shadow-inner">
+        <div 
+            className="h-full bg-[var(--accent-primary)] transition-all duration-200 ease-out"
+            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+        />
+    </div>
+);
+
 
 const App: React.FC = () => {
     const [phase, setPhase] = useState<TypePhase>(TypePhase.Idle);
@@ -193,6 +201,7 @@ const App: React.FC = () => {
     const [accuracy, setAccuracy] = useState<number>(100);
     const [errors, setErrors] = useState<number>(0);
     const [wordCount, setWordCount] = useState<number>(0);
+    const [correctChars, setCorrectChars] = useState<number>(0);
 
     const [bestWpm, setBestWpm] = useState<number>(0);
     const [bestAccuracy, setBestAccuracy] = useState<number>(0);
@@ -270,6 +279,7 @@ const App: React.FC = () => {
         setAccuracy(100);
         setErrors(0);
         setWordCount(0);
+        setCorrectChars(0);
         startTime.current = null;
         if (timerInterval.current) {
             clearInterval(timerInterval.current);
@@ -348,37 +358,46 @@ const App: React.FC = () => {
     };
 
     const calculateStats = useCallback((currentInput: string, timeElapsed: number) => {
-        if (timeElapsed <= 0) return;
+        // Avoid updates with 0 time or very short time to prevent NaN or Infinity spikes
+        if (timeElapsed < 0.2) return;
 
         const currentGraphemes = [...graphemeSplitter.segment(currentInput)].map(s => s.segment);
         const typedGraphemeCount = currentGraphemes.length;
         
         let currentErrors = 0;
-        let correctCharsForWPM = 0;
+        let correctGraphemeCount = 0;
+        let correctCharsLength = 0; // Code unit length for WPM calc
 
         for (let i = 0; i < typedGraphemeCount; i++) {
+            // If user typed more than needed, it's an error
             if (i >= textGraphemes.length || currentGraphemes[i] !== textGraphemes[i]) {
                 currentErrors++;
             } else {
-                correctCharsForWPM += currentGraphemes[i].length;
+                correctGraphemeCount++;
+                correctCharsLength += currentGraphemes[i].length;
             }
         }
         
         setErrors(currentErrors);
+        setCorrectChars(correctGraphemeCount);
 
-        const correctGraphemes = typedGraphemeCount - currentErrors;
-        const currentAccuracy = typedGraphemeCount > 0 ? (correctGraphemes / typedGraphemeCount) * 100 : 100;
+        const currentAccuracy = typedGraphemeCount > 0 ? (correctGraphemeCount / typedGraphemeCount) * 100 : 100;
         setAccuracy(currentAccuracy);
         
         const words = currentInput.trim() === '' ? [] : currentInput.trim().split(/\s+/);
         setWordCount(words.length);
 
         const minutes = timeElapsed / 60;
-        const netWpm = Math.round((correctCharsForWPM / 5) / minutes);
-        const currentRawWpm = Math.round((currentInput.length / 5) / minutes);
-        
-        setWpm(Math.max(0, netWpm));
-        setRawWpm(Math.max(0, currentRawWpm));
+        if (minutes > 0) {
+             // Standard WPM: (Correct characters / 5) / minutes
+             // Using length of correct characters (code units) is standard
+             const netWpm = Math.round((correctCharsLength / 5) / minutes);
+             // Raw WPM: (Total characters typed / 5) / minutes
+             const grossWpm = Math.round((currentInput.length / 5) / minutes);
+             
+             setWpm(Math.max(0, netWpm));
+             setRawWpm(Math.max(0, grossWpm));
+        }
 
     }, [graphemeSplitter, textGraphemes]);
 
@@ -401,6 +420,7 @@ const App: React.FC = () => {
             errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
         };
         
+        // Start Timer Logic
         if (phase === TypePhase.Idle && value.length > 0) {
             setPhase(TypePhase.Typing);
             startTime.current = Date.now();
@@ -417,6 +437,7 @@ const App: React.FC = () => {
         const normalizedCurrent = currentText.normalize('NFC');
         const normalizedTarget = textToType.normalize('NFC');
 
+        // Error checking logic
         if (value.length > rawInput.length) {
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
@@ -436,29 +457,27 @@ const App: React.FC = () => {
         setRawInput(value);
         setUserInput(currentText);
 
-        // Immediate completion check
-        if (normalizedCurrent === normalizedTarget) {
+        // Improved Completion Check:
+        // Instead of strict equality, check if length met.
+        // This handles cases where last char is wrong or there are hidden char differences.
+        if (normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
             if (timerInterval.current) {
                 clearInterval(timerInterval.current);
                 timerInterval.current = null;
             }
+            
+            // Calculate final precise time
+            let finalTime = 0;
             if (startTime.current) {
-                const finalTime = (Date.now() - startTime.current) / 1000;
-                setElapsedTime(finalTime);
-                
-                // Force perfect final stats on completion
-                const totalChars = textToType.length;
-                const minutes = finalTime / 60;
-                const finalWpm = Math.round((totalChars / 5) / minutes);
-                
-                setWpm(finalWpm);
-                setRawWpm(finalWpm);
-                setAccuracy(100);
-                setErrors(0);
-                setWordCount(textToType.split(/\s+/).length);
+                finalTime = (Date.now() - startTime.current) / 1000;
             }
+            setElapsedTime(finalTime);
+            
             setPhase(TypePhase.Finished);
             inputRef.current?.blur();
+
+            // Force final stats calculation with precise time
+            calculateStats(currentText, finalTime);
         }
     };
     
@@ -494,6 +513,8 @@ const App: React.FC = () => {
     }
     
     const timeValue = elapsedTime.toFixed(2);
+    
+    const progress = textToType.length > 0 ? (userInput.length / textToType.length) * 100 : 0;
 
     const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode; disabled?: boolean; }> = 
         ({ value, state, onClick, children, disabled }) => (
@@ -540,14 +561,17 @@ const App: React.FC = () => {
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
-                    <StatsCard label="Raw WPM" value={rawWpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
                     <StatsCard label="Time" value={timeValue} unit="s" />
-                    <StatsCard label="Errors" value={errors} />
                     <StatsCard label="Word Count" value={wordCount} />
+                    
+                    <StatsCard label="Raw WPM" value={rawWpm} />
+                    <StatsCard label="Chars (C/E/T)" value={`${correctChars}/${errors}/${userInput.length}`} />
                     <StatsCard label="Best WPM" value={bestWpm} />
                     <StatsCard label="Best Accuracy" value={bestAccuracy.toFixed(0)} unit="%" />
                 </div>
+                
+                <ProgressBar progress={progress} />
                 
                  <div className="flex items-center gap-2 mb-8">
                     <span className="text-[var(--text-secondary)]">Theme:</span>
