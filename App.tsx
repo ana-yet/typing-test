@@ -605,6 +605,13 @@ const App: React.FC = () => {
                                 {textGraphemes.map((grapheme, index) => {
                                     let charClassName;
                                     const isCursor = index === userInputGraphemes.length && phase !== TypePhase.Finished;
+                                    
+                                    // Check if the PREVIOUS character typed was an error.
+                                    // This signals the user to backspace.
+                                    const lastCharIndex = userInputGraphemes.length - 1;
+                                    const isLastWrong = lastCharIndex >= 0 && 
+                                                       lastCharIndex < textGraphemes.length && 
+                                                       userInputGraphemes[lastCharIndex] !== textGraphemes[lastCharIndex];
 
                                     if (index < userInputGraphemes.length) {
                                         charClassName = grapheme === userInputGraphemes[index] 
@@ -618,16 +625,22 @@ const App: React.FC = () => {
                                         charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
                                     }
                                     
-                                    const cursorClassName = isCursor ? (grapheme === ' ' ? 'cursor-blink-space' : 'cursor-blink') : '';
+                                    let cursorClass = '';
+                                    if (isCursor) {
+                                        cursorClass = 'cursor-active';
+                                        if (isLastWrong) {
+                                            cursorClass += ' cursor-error';
+                                        }
+                                    }
 
                                     return (
-                                        <span key={index} className={`${charClassName} ${cursorClassName}`}>
+                                        <span key={index} className={`relative ${charClassName} ${cursorClass}`}>
                                             {grapheme === ' ' ? '\u00A0' : grapheme}
                                         </span>
                                     );
                                 })}
                                 {phase !== TypePhase.Finished && userInputGraphemes.length >= textGraphemes.length && (
-                                    <span className="cursor-blink"></span>
+                                    <span className="cursor-active"></span>
                                 )}
                             </p>
                             <input

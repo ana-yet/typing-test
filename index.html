@@ -26,9 +26,6 @@
         --accent-primary-faded: #7dd3fc;
         --cursor-color: #38bdf8;
       }
-      @keyframes pulse {
-        50% { border-color: transparent; }
-      }
       @keyframes error-pulse {
         0% { transform: scale(1); }
         50% { transform: scale(1.05); }
@@ -37,22 +34,41 @@
       .error-flash {
         animation: error-pulse 0.3s ease-out;
       }
-      .cursor-blink {
-        border-left: 2px solid var(--cursor-color);
-        animation: pulse 1.2s ease-in-out infinite;
-        margin-left: -2px; /* Prevents layout shift */
+      
+      /* Enhanced Cursor Animations */
+      @keyframes cursor-pulse {
+        0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--cursor-color); }
+        50% { opacity: 0.4; box-shadow: none; }
       }
-       .cursor-blink-space {
+      @keyframes cursor-pulse-error {
+        0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--bg-incorrect); }
+        50% { opacity: 0.4; box-shadow: none; }
+      }
+
+      /* Base Cursor Style */
+      .cursor-active {
         position: relative;
       }
-      .cursor-blink-space::before {
+      
+      .cursor-active::before {
         content: '';
         position: absolute;
-        top: 20%;
-        bottom: 20%;
-        left: 0;
-        border-left: 2px solid var(--cursor-color);
-        animation: pulse 1.2s ease-in-out infinite;
+        left: -1px;
+        top: 10%;
+        bottom: 10%;
+        width: 3px;
+        background-color: var(--cursor-color);
+        border-radius: 2px;
+        animation: cursor-pulse 1.2s ease-in-out infinite;
+        pointer-events: none;
+        z-index: 10;
+      }
+
+      /* Error State Cursor */
+      .cursor-error::before {
+        background-color: var(--bg-incorrect);
+        width: 4px; /* Slightly thicker for emphasis */
+        animation: cursor-pulse-error 0.8s ease-in-out infinite; /* Faster pulse */
       }
     </style>
   <script type="importmap">
