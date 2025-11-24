@@ -210,8 +210,7 @@ const App: React.FC = () => {
     const [shortcuts, setShortcuts] = useState<Record<ActionKey, string>>(DEFAULT_SHORTCUTS);
 
     const inputRef = useRef<HTMLInputElement>(null);
-    const keypressSound = useRef<HTMLAudioElement | null>(null);
-    const errorSound = useRef<HTMLAudioElement | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
     const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const graphemeSplitter = useMemo(() => new (Intl as any).Segmenter(), []);
@@ -223,11 +222,6 @@ const App: React.FC = () => {
         userInput ? [...graphemeSplitter.segment(userInput)].map(s => s.segment) : [], 
         [userInput, graphemeSplitter]
     );
-
-    useEffect(() => {
-        keypressSound.current = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-        errorSound.current = new Audio("data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQYYAAAAAP//AAAA//8A//8A/v/9AP7//QD+/wEA/v8A/v/9AP8A");
-    }, []);
 
     useEffect(() => {
         const storedBestWpm = localStorage.getItem('bestWpm');
@@ -344,18 +338,48 @@ const App: React.FC = () => {
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
     }, [shortcuts, showShortcutsModal, language, handleRestart]);
 
-    const playSound = () => {
-        if (soundEnabled && keypressSound.current) {
-            keypressSound.current.currentTime = 0;
-            keypressSound.current.play().catch(e => console.error("Error playing sound:", e));
-        }
-    };
+    const playSystemSound = useCallback((type: 'click' | 'error') => {
+        if (!soundEnabled) return;
 
-    const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key.length === 1 || e.key === 'Backspace') {
-            playSound();
+        // Initialize AudioContext on first user gesture
+        if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         }
-    };
+        if (audioContextRef.current.state === 'suspended') {
+             audioContextRef.current.resume();
+        }
+
+        const ctx = audioContextRef.current;
+        if (!ctx) return;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const now = ctx.currentTime;
+
+        if (type === 'click') {
+            // Subtle "mechanical" click - Sine wave with short decay
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, now);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.05);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        } else {
+            // Error sound - Low sawtooth thud
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.linearRampToValueAtTime(100, now + 0.1);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+            osc.start(now);
+            osc.stop(now + 0.15);
+        }
+    }, [soundEnabled]);
 
     const calculateStats = useCallback((currentInput: string, timeElapsed: number) => {
         // Avoid updates with 0 time or very short time to prevent NaN or Infinity spikes
@@ -411,11 +435,7 @@ const App: React.FC = () => {
             errorTimeoutRef.current = null;
         }
 
-        const playErrorFeedback = (index: number) => {
-            if (soundEnabled && errorSound.current) {
-                errorSound.current.currentTime = 0;
-                errorSound.current.play().catch(err => console.error("Error playing sound:", err));
-            }
+        const triggerErrorVisual = (index: number) => {
             setErrorIndex(index);
             errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
         };
@@ -437,8 +457,9 @@ const App: React.FC = () => {
         const normalizedCurrent = currentText.normalize('NFC');
         const normalizedTarget = textToType.normalize('NFC');
 
-        // Error checking logic
+        // Sound & Error Checking Logic
         if (value.length > rawInput.length) {
+            // User typed something
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
             
@@ -446,20 +467,22 @@ const App: React.FC = () => {
                 lastTypedGraphemeIndex < textGraphemes.length && 
                 currentGraphemes[lastTypedGraphemeIndex] !== textGraphemes[lastTypedGraphemeIndex]
             ) {
-                playErrorFeedback(lastTypedGraphemeIndex);
+                playSystemSound('error');
+                triggerErrorVisual(lastTypedGraphemeIndex);
             } else {
+                playSystemSound('click');
                 setErrorIndex(null);
             }
         } else {
+            // Backspace or no change
+            playSystemSound('click');
             setErrorIndex(null);
         }
         
         setRawInput(value);
         setUserInput(currentText);
 
-        // Improved Completion Check:
-        // Instead of strict equality, check if length met.
-        // This handles cases where last char is wrong or there are hidden char differences.
+        // Completion Check
         if (normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
             if (timerInterval.current) {
                 clearInterval(timerInterval.current);
@@ -647,7 +670,6 @@ const App: React.FC = () => {
                                 ref={inputRef}
                                 type="text"
                                 value={rawInput}
-                                onKeyDown={handleInputKeyDown}
                                 onChange={handleInput}
                                 className="absolute top-0 left-0 w-full h-full opacity-0 cursor-text"
                                 disabled={phase === TypePhase.Finished || loading}
