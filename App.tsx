@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { generateTypingText } from './services/geminiService';
 import { translate as translateToAvro } from './services/avroLayout';
+import { getRandomQuote, Quote } from './services/quotes';
 import StatsCard from './components/StatsCard';
 import Spinner from './components/Spinner';
 import AvroKeyboard from './components/AvroKeyboard';
@@ -206,6 +207,8 @@ const App: React.FC = () => {
     const [bestWpm, setBestWpm] = useState<number>(0);
     const [bestAccuracy, setBestAccuracy] = useState<number>(0);
     
+    const [quote, setQuote] = useState<Quote | null>(null);
+    
     const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
     const [shortcuts, setShortcuts] = useState<Record<ActionKey, string>>(DEFAULT_SHORTCUTS);
 
@@ -284,6 +287,7 @@ const App: React.FC = () => {
     const fetchText = useCallback(() => {
         setLoading(true);
         resetState();
+        setQuote(getRandomQuote());
         try {
             const newText = generateTypingText(language, difficulty);
             setTextToType(newText.trim());
@@ -595,6 +599,17 @@ const App: React.FC = () => {
                 </div>
                 
                 <ProgressBar progress={progress} />
+                
+                {quote && (
+                    <div key={quote.text} className="mb-6 text-center max-w-2xl px-4 animate-fade-in">
+                        <p className="text-lg sm:text-xl italic text-[var(--text-primary)] opacity-90 font-serif">
+                            "{quote.text}"
+                        </p>
+                        <p className="text-sm text-[var(--text-secondary)] mt-2 font-medium">
+                            — {quote.author}
+                        </p>
+                    </div>
+                )}
                 
                  <div className="flex items-center gap-2 mb-8">
                     <span className="text-[var(--text-secondary)]">Theme:</span>
