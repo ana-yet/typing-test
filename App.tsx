@@ -226,6 +226,15 @@ const App: React.FC = () => {
         [userInput, graphemeSplitter]
     );
 
+    // Combine text and user input for rendering to handle extra typed characters
+    const displayGraphemes = useMemo(() => {
+        const length = Math.max(textGraphemes.length, userInputGraphemes.length);
+        return Array.from({ length }, (_, i) => ({
+            target: textGraphemes[i], // undefined if i >= text length
+            user: userInputGraphemes[i] // undefined if i >= user length
+        }));
+    }, [textGraphemes, userInputGraphemes]);
+
     useEffect(() => {
         const storedBestWpm = localStorage.getItem('bestWpm');
         const storedBestAccuracy = localStorage.getItem('bestAccuracy');
@@ -467,9 +476,10 @@ const App: React.FC = () => {
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
             
+            // Error if index is out of bounds (extra char) OR if grapheme doesn't match
             if (
-                lastTypedGraphemeIndex < textGraphemes.length && 
-                currentGraphemes[lastTypedGraphemeIndex] !== textGraphemes[lastTypedGraphemeIndex]
+                lastTypedGraphemeIndex >= textGraphemes.length || 
+                (lastTypedGraphemeIndex >= 0 && currentGraphemes[lastTypedGraphemeIndex] !== textGraphemes[lastTypedGraphemeIndex])
             ) {
                 playSystemSound('error');
                 triggerErrorVisual(lastTypedGraphemeIndex);
@@ -487,7 +497,14 @@ const App: React.FC = () => {
         setUserInput(currentText);
 
         // Completion Check
+        // Only finish if length matches AND the last character matches target
+        // (Prevent finishing if user just spammed random chars to reach length)
+        // Actually standard check is just correct length for typing tests, but typically we want equality.
+        // Simplified check: If length >= target length, we stop. Stats will show accuracy.
         if (normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
+            // Optional: Wait for strict equality? Usually speed tests stop when you reach the end.
+            // If the user has extra characters, they are errors, but the test ends.
+            
             if (timerInterval.current) {
                 clearInterval(timerInterval.current);
                 timerInterval.current = null;
@@ -640,45 +657,61 @@ const App: React.FC = () => {
                     ) : (
                         <>
                             <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
-                                {textGraphemes.map((grapheme, index) => {
-                                    let charClassName;
+                                {displayGraphemes.map(({ target, user }, index) => {
                                     const isCursor = index === userInputGraphemes.length && phase !== TypePhase.Finished;
+                                    const isExtra = index >= textGraphemes.length;
                                     
-                                    // Check if the PREVIOUS character typed was an error.
-                                    // This signals the user to backspace.
-                                    const lastCharIndex = userInputGraphemes.length - 1;
-                                    const isLastWrong = lastCharIndex >= 0 && 
-                                                       lastCharIndex < textGraphemes.length && 
-                                                       userInputGraphemes[lastCharIndex] !== textGraphemes[lastCharIndex];
-
-                                    if (index < userInputGraphemes.length) {
-                                        charClassName = grapheme === userInputGraphemes[index] 
-                                            ? 'text-[var(--text-correct)]' 
-                                            : 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
-                                    } else {
-                                        charClassName = 'text-[var(--text-muted)]';
+                                    let charClassName = 'text-[var(--text-muted)]';
+                                    
+                                    if (user !== undefined) {
+                                        if (isExtra) {
+                                            charClassName = 'text-[var(--bg-incorrect)] opacity-80 border-b-2 border-[var(--bg-incorrect)]'; // Highlight extra chars
+                                        } else if (user === target) {
+                                            charClassName = 'text-[var(--text-correct)]';
+                                        } else {
+                                            charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
+                                        }
                                     }
 
-                                    if (index === errorIndex) {
+                                    // Special flash for current error
+                                    if (index === errorIndex && !isExtra) {
                                         charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
                                     }
                                     
+                                    // Cursor Styling
                                     let cursorClass = '';
                                     if (isCursor) {
                                         cursorClass = 'cursor-active';
-                                        if (isLastWrong) {
+                                        // Determine if cursor should be error-colored
+                                        // It should be error-colored if the LAST typed character was wrong
+                                        const lastIndex = index - 1;
+                                        const lastWasWrong = lastIndex >= 0 && (
+                                            lastIndex >= textGraphemes.length || // Extra char is inherently wrong
+                                            (userInputGraphemes[lastIndex] !== textGraphemes[lastIndex]) // Mismatch
+                                        );
+                                        
+                                        if (lastWasWrong) {
                                             cursorClass += ' cursor-error';
                                         }
                                     }
 
                                     return (
-                                        <span key={index} className={`relative ${charClassName} ${cursorClass}`}>
-                                            {grapheme === ' ' ? '\u00A0' : grapheme}
+                                        <span key={index} className={`relative inline-block ${charClassName} ${cursorClass}`}>
+                                            {isExtra ? user : (target === ' ' ? '\u00A0' : target)}
                                         </span>
                                     );
                                 })}
-                                {phase !== TypePhase.Finished && userInputGraphemes.length >= textGraphemes.length && (
-                                    <span className="cursor-active"></span>
+                                
+                                {/* Trailing Cursor (if at the very end) */}
+                                {phase !== TypePhase.Finished && userInputGraphemes.length === displayGraphemes.length && (
+                                     <span className={`relative inline-block cursor-active ${
+                                         (userInputGraphemes.length > 0 && (
+                                             userInputGraphemes.length > textGraphemes.length || 
+                                             userInputGraphemes[userInputGraphemes.length-1] !== textGraphemes[userInputGraphemes.length-1]
+                                         )) ? 'cursor-error' : ''
+                                     }`}>
+                                        &nbsp;
+                                    </span>
                                 )}
                             </p>
                             <input
