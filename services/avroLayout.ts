@@ -177,3 +177,19 @@ export function translate(text: string): string {
 
     return result;
 }
+
+// Checks if the partial English input could potentially match the target grapheme
+// by being a prefix of a longer phonetic pattern.
+export function isValidPhoneticPrefix(partial: string, targetGrapheme: string): boolean {
+    for (const key of sortedKeys) {
+        // If the key starts with the partial input (meaning the user might be typing this key)
+        if (key.startsWith(partial)) {
+             const pat = patterns[key];
+             // And if the pattern's value matches the start of the target grapheme
+             if (targetGrapheme.startsWith(pat.value)) {
+                 return true;
+             }
+        }
+    }
+    return false;
+}

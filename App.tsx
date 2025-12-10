@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { generateTypingText } from './services/geminiService';
-import { translate as translateToAvro } from './services/avroLayout';
+import { translate as translateToAvro, isValidPhoneticPrefix } from './services/avroLayout';
 import { getRandomQuote, Quote } from './services/quotes';
 import StatsCard from './components/StatsCard';
 import Spinner from './components/Spinner';
@@ -374,20 +374,20 @@ const App: React.FC = () => {
         const now = ctx.currentTime;
 
         if (type === 'click') {
-            // Subtle "mechanical" click - Sine wave with short decay
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, now);
-            osc.frequency.exponentialRampToValueAtTime(300, now + 0.05);
-            gain.gain.setValueAtTime(0.2, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+            // Subtle mechanical click - clean sine/triangle mix
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(300, now + 0.03);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
             osc.start(now);
             osc.stop(now + 0.05);
         } else {
-            // Error sound - Low sawtooth thud
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, now);
-            osc.frequency.linearRampToValueAtTime(100, now + 0.1);
-            gain.gain.setValueAtTime(0.25, now);
+            // Error sound - softer thud
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(120, now);
+            osc.frequency.linearRampToValueAtTime(80, now + 0.1);
+            gain.gain.setValueAtTime(0.2, now);
             gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
             osc.start(now);
             osc.stop(now + 0.15);
@@ -476,11 +476,39 @@ const App: React.FC = () => {
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
             
+            let isError = false;
+
             // Error if index is out of bounds (extra char) OR if grapheme doesn't match
-            if (
-                lastTypedGraphemeIndex >= textGraphemes.length || 
-                (lastTypedGraphemeIndex >= 0 && currentGraphemes[lastTypedGraphemeIndex] !== textGraphemes[lastTypedGraphemeIndex])
-            ) {
+            if (lastTypedGraphemeIndex >= textGraphemes.length) {
+                isError = true;
+            } else if (lastTypedGraphemeIndex >= 0) {
+                const typed = currentGraphemes[lastTypedGraphemeIndex];
+                const target = textGraphemes[lastTypedGraphemeIndex];
+
+                if (typed !== target) {
+                    let suppressed = false;
+                    // For Bengali, allow partial phonetic matches
+                    if (language === 'bengali') {
+                        // 1. Check if the generated char is a prefix of the target (e.g. 'ক' is prefix of 'কা')
+                        if (target.startsWith(typed)) {
+                            suppressed = true;
+                        } else {
+                            // 2. Check if the raw English input is a valid phonetic prefix for the target
+                            // We check suffixes of rawInput because we don't know exactly where the current char started
+                            const possibleSuffixes = [1, 2, 3].map(len => value.slice(-len));
+                            if (possibleSuffixes.some(suffix => isValidPhoneticPrefix(suffix, target))) {
+                                suppressed = true;
+                            }
+                        }
+                    }
+                    
+                    if (!suppressed) {
+                        isError = true;
+                    }
+                }
+            }
+
+            if (isError) {
                 playSystemSound('error');
                 triggerErrorVisual(lastTypedGraphemeIndex);
             } else {
@@ -499,11 +527,8 @@ const App: React.FC = () => {
         // Completion Check
         // Only finish if length matches AND the last character matches target
         // (Prevent finishing if user just spammed random chars to reach length)
-        // Actually standard check is just correct length for typing tests, but typically we want equality.
         // Simplified check: If length >= target length, we stop. Stats will show accuracy.
         if (normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
-            // Optional: Wait for strict equality? Usually speed tests stop when you reach the end.
-            // If the user has extra characters, they are errors, but the test ends.
             
             if (timerInterval.current) {
                 clearInterval(timerInterval.current);
