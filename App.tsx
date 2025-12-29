@@ -187,6 +187,9 @@ const App: React.FC = () => {
     
     const [language, setLanguage] = useState('english');
     const [difficulty, setDifficulty] = useState('medium');
+    const [mode, setMode] = useState<'passages' | 'custom'>('passages');
+    const [customTextInput, setCustomTextInput] = useState<string>('');
+    
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
@@ -294,6 +297,11 @@ const App: React.FC = () => {
     }, []);
 
     const fetchText = useCallback(() => {
+        if (mode === 'custom') {
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         resetState();
         setQuote(getRandomQuote());
@@ -307,7 +315,7 @@ const App: React.FC = () => {
             setLoading(false);
             setTimeout(() => inputRef.current?.focus(), 50);
         }
-    }, [language, difficulty, resetState]);
+    }, [language, difficulty, mode, resetState]);
 
     useEffect(() => {
         fetchText();
@@ -316,6 +324,16 @@ const App: React.FC = () => {
     const handleRestart = useCallback(() => {
         fetchText();
     }, [fetchText]);
+
+    const handleSetCustomText = () => {
+        if (!customTextInput.trim()) {
+            alert("Please enter some text to practice.");
+            return;
+        }
+        setTextToType(customTextInput.trim());
+        resetState();
+        setTimeout(() => inputRef.current?.focus(), 50);
+    };
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -354,7 +372,6 @@ const App: React.FC = () => {
     const playSystemSound = useCallback((type: 'click' | 'error') => {
         if (!soundEnabled) return;
 
-        // Initialize AudioContext on first user gesture
         if (!audioContextRef.current) {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         }
@@ -374,7 +391,6 @@ const App: React.FC = () => {
         const now = ctx.currentTime;
 
         if (type === 'click') {
-            // Subtle mechanical click - clean sine/triangle mix
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(600, now);
             osc.frequency.exponentialRampToValueAtTime(300, now + 0.03);
@@ -383,7 +399,6 @@ const App: React.FC = () => {
             osc.start(now);
             osc.stop(now + 0.05);
         } else {
-            // Error sound - softer thud
             osc.type = 'sine'; 
             osc.frequency.setValueAtTime(120, now);
             osc.frequency.linearRampToValueAtTime(80, now + 0.1);
@@ -395,7 +410,6 @@ const App: React.FC = () => {
     }, [soundEnabled]);
 
     const calculateStats = useCallback((currentInput: string, timeElapsed: number) => {
-        // Avoid updates with 0 time or very short time to prevent NaN or Infinity spikes
         if (timeElapsed < 0.2) return;
 
         const currentGraphemes = [...graphemeSplitter.segment(currentInput)].map(s => s.segment);
@@ -403,10 +417,9 @@ const App: React.FC = () => {
         
         let currentErrors = 0;
         let correctGraphemeCount = 0;
-        let correctCharsLength = 0; // Code unit length for WPM calc
+        let correctCharsLength = 0; 
 
         for (let i = 0; i < typedGraphemeCount; i++) {
-            // If user typed more than needed, it's an error
             if (i >= textGraphemes.length || currentGraphemes[i] !== textGraphemes[i]) {
                 currentErrors++;
             } else {
@@ -426,12 +439,8 @@ const App: React.FC = () => {
 
         const minutes = timeElapsed / 60;
         if (minutes > 0) {
-             // Standard WPM: (Correct characters / 5) / minutes
-             // Using length of correct characters (code units) is standard
              const netWpm = Math.round((correctCharsLength / 5) / minutes);
-             // Raw WPM: (Total characters typed / 5) / minutes
              const grossWpm = Math.round((currentInput.length / 5) / minutes);
-             
              setWpm(Math.max(0, netWpm));
              setRawWpm(Math.max(0, grossWpm));
         }
@@ -440,7 +449,6 @@ const App: React.FC = () => {
 
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
-
         if (phase === TypePhase.Finished) return;
 
         if (errorTimeoutRef.current) {
@@ -453,7 +461,6 @@ const App: React.FC = () => {
             errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
         };
         
-        // Start Timer Logic
         if (phase === TypePhase.Idle && value.length > 0) {
             setPhase(TypePhase.Typing);
             startTime.current = Date.now();
@@ -465,20 +472,14 @@ const App: React.FC = () => {
         }
         
         const currentText = language === 'bengali' ? translateToAvro(value) : value;
-        
-        // Normalize to handle potential unicode differences (NFC)
         const normalizedCurrent = currentText.normalize('NFC');
         const normalizedTarget = textToType.normalize('NFC');
 
-        // Sound & Error Checking Logic
         if (value.length > rawInput.length) {
-            // User typed something
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
-            
             let isError = false;
 
-            // Error if index is out of bounds (extra char) OR if grapheme doesn't match
             if (lastTypedGraphemeIndex >= textGraphemes.length) {
                 isError = true;
             } else if (lastTypedGraphemeIndex >= 0) {
@@ -487,24 +488,17 @@ const App: React.FC = () => {
 
                 if (typed !== target) {
                     let suppressed = false;
-                    // For Bengali, allow partial phonetic matches
                     if (language === 'bengali') {
-                        // 1. Check if the generated char is a prefix of the target (e.g. 'ক' is prefix of 'কা')
                         if (target.startsWith(typed)) {
                             suppressed = true;
                         } else {
-                            // 2. Check if the raw English input is a valid phonetic prefix for the target
-                            // We check suffixes of rawInput because we don't know exactly where the current char started
                             const possibleSuffixes = [1, 2, 3].map(len => value.slice(-len));
                             if (possibleSuffixes.some(suffix => isValidPhoneticPrefix(suffix, target))) {
                                 suppressed = true;
                             }
                         }
                     }
-                    
-                    if (!suppressed) {
-                        isError = true;
-                    }
+                    if (!suppressed) isError = true;
                 }
             }
 
@@ -516,7 +510,6 @@ const App: React.FC = () => {
                 setErrorIndex(null);
             }
         } else {
-            // Backspace or no change
             playSystemSound('click');
             setErrorIndex(null);
         }
@@ -524,40 +517,28 @@ const App: React.FC = () => {
         setRawInput(value);
         setUserInput(currentText);
 
-        // Completion Check
-        // Only finish if length matches AND the last character matches target
-        // (Prevent finishing if user just spammed random chars to reach length)
-        // Simplified check: If length >= target length, we stop. Stats will show accuracy.
         if (normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
-            
             if (timerInterval.current) {
                 clearInterval(timerInterval.current);
                 timerInterval.current = null;
             }
-            
-            // Calculate final precise time
             let finalTime = 0;
             if (startTime.current) {
                 finalTime = (Date.now() - startTime.current) / 1000;
             }
             setElapsedTime(finalTime);
-            
             setPhase(TypePhase.Finished);
             inputRef.current?.blur();
-
-            // Force final stats calculation with precise time
             calculateStats(currentText, finalTime);
         }
     };
     
-    // Dedicated effect for stats update during typing
     useEffect(() => {
         if (phase === TypePhase.Typing) {
             calculateStats(userInput, elapsedTime);
         }
     }, [elapsedTime, userInput, phase, calculateStats]);
 
-    // Effect for saving best scores
     useEffect(() => {
         if (phase === TypePhase.Finished) {
             if (wpm > bestWpm) {
@@ -582,10 +563,9 @@ const App: React.FC = () => {
     }
     
     const timeValue = elapsedTime.toFixed(2);
-    
     const progress = textToType.length > 0 ? (userInput.length / textToType.length) * 100 : 0;
 
-    const OptionButton: React.FC<{ value: string; state: string; onClick: (value: string) => void; children: React.ReactNode; disabled?: boolean; }> = 
+    const OptionButton: React.FC<{ value: string; state: string; onClick: (value: any) => void; children: React.ReactNode; disabled?: boolean; }> = 
         ({ value, state, onClick, children, disabled }) => (
         <button 
             onClick={() => onClick(value)}
@@ -612,21 +592,50 @@ const App: React.FC = () => {
 
                 <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-4 mb-8">
                     <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Mode:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            <OptionButton value="passages" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Passages</OptionButton>
+                            <OptionButton value="custom" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Custom</OptionButton>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
                         <span className="text-[var(--text-secondary)]">Language:</span>
                         <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
                             <OptionButton value="english" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>English</OptionButton>
                             <OptionButton value="bengali" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>Bengali</OptionButton>
                         </div>
                     </div>
-                     <div className="flex items-center gap-2">
-                        <span className="text-[var(--text-secondary)]">Difficulty:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
-                           <OptionButton value="easy" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Easy</OptionButton>
-                           <OptionButton value="medium" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Medium</OptionButton>
-                           <OptionButton value="hard" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Hard</OptionButton>
+                     {mode === 'passages' && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-[var(--text-secondary)]">Difficulty:</span>
+                            <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            <OptionButton value="easy" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Easy</OptionButton>
+                            <OptionButton value="medium" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Medium</OptionButton>
+                            <OptionButton value="hard" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Hard</OptionButton>
+                            </div>
+                        </div>
+                     )}
+                </div>
+
+                {mode === 'custom' && phase === TypePhase.Idle && (
+                    <div className="w-full max-w-3xl mb-8 flex flex-col gap-4 animate-fade-in">
+                        <textarea
+                            value={customTextInput}
+                            onChange={(e) => setCustomTextInput(e.target.value)}
+                            placeholder="Paste your custom text here..."
+                            className="w-full h-32 p-4 rounded-lg bg-[var(--bg-secondary)] border border-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-secondary)] transition-all resize-none"
+                        />
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs text-[var(--text-secondary)]">{customTextInput.length} characters</span>
+                            <button
+                                onClick={handleSetCustomText}
+                                className="px-4 py-2 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] rounded-md hover:bg-[var(--accent-secondary-hover)] transition-colors"
+                            >
+                                Set Custom Text
+                            </button>
                         </div>
                     </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8">
                     <StatsCard label="WPM" value={wpm} />
@@ -674,10 +683,14 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="w-full bg-[var(--bg-secondary)] p-6 rounded-lg shadow-lg relative" onClick={focusInput}>
+                <div className="w-full bg-[var(--bg-secondary)] p-6 rounded-lg shadow-lg relative min-h-[120px]" onClick={focusInput}>
                     {loading ? (
                         <div className="h-48 flex items-center justify-center">
                             <Spinner />
+                        </div>
+                    ) : !textToType ? (
+                        <div className="h-24 flex items-center justify-center text-[var(--text-muted)] italic">
+                            {mode === 'custom' ? 'Load some custom text to start.' : 'Generating text...'}
                         </div>
                     ) : (
                         <>
@@ -690,7 +703,7 @@ const App: React.FC = () => {
                                     
                                     if (user !== undefined) {
                                         if (isExtra) {
-                                            charClassName = 'text-[var(--bg-incorrect)] opacity-80 border-b-2 border-[var(--bg-incorrect)]'; // Highlight extra chars
+                                            charClassName = 'text-[var(--bg-incorrect)] opacity-80 border-b-2 border-[var(--bg-incorrect)]'; 
                                         } else if (user === target) {
                                             charClassName = 'text-[var(--text-correct)]';
                                         } else {
@@ -698,21 +711,17 @@ const App: React.FC = () => {
                                         }
                                     }
 
-                                    // Special flash for current error
                                     if (index === errorIndex && !isExtra) {
                                         charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
                                     }
                                     
-                                    // Cursor Styling
                                     let cursorClass = '';
                                     if (isCursor) {
                                         cursorClass = 'cursor-active';
-                                        // Determine if cursor should be error-colored
-                                        // It should be error-colored if the LAST typed character was wrong
                                         const lastIndex = index - 1;
                                         const lastWasWrong = lastIndex >= 0 && (
-                                            lastIndex >= textGraphemes.length || // Extra char is inherently wrong
-                                            (userInputGraphemes[lastIndex] !== textGraphemes[lastIndex]) // Mismatch
+                                            lastIndex >= textGraphemes.length || 
+                                            (userInputGraphemes[lastIndex] !== textGraphemes[lastIndex])
                                         );
                                         
                                         if (lastWasWrong) {
@@ -727,7 +736,6 @@ const App: React.FC = () => {
                                     );
                                 })}
                                 
-                                {/* Trailing Cursor (if at the very end) */}
                                 {phase !== TypePhase.Finished && userInputGraphemes.length === displayGraphemes.length && (
                                      <span className={`relative inline-block cursor-active ${
                                          (userInputGraphemes.length > 0 && (
@@ -745,7 +753,7 @@ const App: React.FC = () => {
                                 value={rawInput}
                                 onChange={handleInput}
                                 className="absolute top-0 left-0 w-full h-full opacity-0 cursor-text"
-                                disabled={phase === TypePhase.Finished || loading}
+                                disabled={phase === TypePhase.Finished || loading || !textToType}
                                 autoFocus
                                 autoComplete="off"
                                 autoCorrect="off"
