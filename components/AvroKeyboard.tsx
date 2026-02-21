@@ -90,7 +90,7 @@ const keyboardLayout = [
 
 const AvroKeyboard: React.FC<{ activeKey: string; onClose: () => void }> = ({ activeKey, onClose }) => {
     return (
-        <div className="w-full max-w-4xl mt-8 p-4 bg-[var(--bg-secondary)] rounded-lg shadow-lg animate-fade-in border border-[var(--bg-tertiary)]">
+        <div className="w-full max-w-4xl p-4 bg-[var(--bg-secondary)] rounded-lg shadow-lg animate-fade-in border border-[var(--bg-tertiary)]">
             <div className="flex justify-between items-center mb-4 border-b border-[var(--bg-tertiary)] pb-2">
                 <div className="flex items-center gap-2">
                      <h2 className="text-lg font-bold text-[var(--text-primary)]">Avro Phonetic Chart</h2>

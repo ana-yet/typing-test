@@ -194,6 +194,7 @@ const App: React.FC = () => {
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
     const [theme, setTheme] = useState<string>('dark');
+    const [zenMode, setZenMode] = useState<boolean>(false);
     const [errorIndex, setErrorIndex] = useState<number | null>(null);
 
     const startTime = useRef<number | null>(null);
@@ -337,10 +338,10 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            if (showShortcutsModal) return;
+
             const target = e.target as HTMLElement;
-            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || showShortcutsModal) {
-                return;
-            }
+            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
 
             const pressedShortcut = formatShortcut(e);
             if (!pressedShortcut) return;
@@ -348,6 +349,12 @@ const App: React.FC = () => {
             const action = (Object.keys(shortcuts) as ActionKey[]).find(key => shortcuts[key] === pressedShortcut);
 
             if (action) {
+                // If we're in an input, only allow shortcuts that use Ctrl, Alt, or Meta
+                // to prevent overriding normal typing (like Shift+A)
+                if (isInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    return;
+                }
+
                 e.preventDefault();
                 switch (action) {
                     case 'restart':
@@ -600,9 +607,22 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-[var(--text-secondary)]">Language:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
-                            <OptionButton value="english" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>English</OptionButton>
-                            <OptionButton value="bengali" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>Bengali</OptionButton>
+                        <div className="flex items-center gap-2">
+                            <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                                <OptionButton value="english" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>English</OptionButton>
+                                <OptionButton value="bengali" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>Bengali</OptionButton>
+                            </div>
+                            {language === 'bengali' && (
+                                <button
+                                    onClick={() => setShowAvroChart(!showAvroChart)}
+                                    title={`Show Avro Keyboard Layout (${shortcuts.toggleAvroChart})`}
+                                    className="p-1.5 rounded-md bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                    </svg>
+                                </button>
+                            )}
                         </div>
                     </div>
                      {mode === 'passages' && (
@@ -615,6 +635,16 @@ const App: React.FC = () => {
                             </div>
                         </div>
                      )}
+                    <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Zen Mode:</span>
+                        <button 
+                            onClick={() => setZenMode(!zenMode)}
+                            className={`px-3 py-1 text-sm rounded-md transition-colors ${zenMode ? 'bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)]' : 'bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)]'}`}
+                            disabled={phase === TypePhase.Typing}
+                        >
+                            {zenMode ? 'On' : 'Off'}
+                        </button>
+                    </div>
                 </div>
 
                 {mode === 'custom' && phase === TypePhase.Idle && (
@@ -637,7 +667,7 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8">
+                <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8 transition-opacity duration-300 ${(zenMode && phase === TypePhase.Typing) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                     <StatsCard label="WPM" value={wpm} />
                     <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
                     <StatsCard label="Time" value={timeValue} unit="s" />
@@ -649,7 +679,9 @@ const App: React.FC = () => {
                     <StatsCard label="Best Accuracy" value={bestAccuracy.toFixed(0)} unit="%" />
                 </div>
                 
-                <ProgressBar progress={progress} />
+                <div className={`w-full max-w-3xl transition-opacity duration-300 ${(zenMode && phase === TypePhase.Typing) ? 'opacity-0' : 'opacity-100'}`}>
+                    <ProgressBar progress={progress} />
+                </div>
                 
                 {quote && (
                     <div key={quote.text} className="mb-6 text-center max-w-2xl px-4 animate-fade-in">
@@ -766,6 +798,7 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4 mt-8">
                     <button 
                         onClick={handleRestart} 
+                        title={`Restart (${shortcuts.restart})`}
                         className="px-6 py-3 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] font-bold rounded-lg hover:bg-[var(--accent-secondary-hover)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:ring-offset-2 focus:ring-offset-[var(--bg-primary)]"
                     >
                         {phase === TypePhase.Finished ? 'New Test' : 'Restart'}
@@ -773,6 +806,7 @@ const App: React.FC = () => {
                     {language === 'bengali' && (
                          <button 
                             onClick={() => setShowAvroChart(!showAvroChart)}
+                            title={`Show Avro Chart (${shortcuts.toggleAvroChart})`}
                             aria-label="Show Avro Chart"
                             className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
                         >
@@ -781,6 +815,7 @@ const App: React.FC = () => {
                     )}
                     <button 
                         onClick={() => setSoundEnabled(!soundEnabled)}
+                        title={`${soundEnabled ? "Disable sound" : "Enable sound"} (${shortcuts.toggleSound})`}
                         aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
                         className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
                     >
@@ -800,10 +835,14 @@ const App: React.FC = () => {
                 </div>
                 
                 {language === 'bengali' && showAvroChart && (
-                    <AvroKeyboard 
-                        activeKey={activeKey} 
-                        onClose={() => setShowAvroChart(false)}
-                    />
+                    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={() => setShowAvroChart(false)}>
+                        <div className="w-full max-w-5xl" onClick={e => e.stopPropagation()}>
+                            <AvroKeyboard 
+                                activeKey={activeKey} 
+                                onClose={() => setShowAvroChart(false)}
+                            />
+                        </div>
+                    </div>
                 )}
 
             </main>

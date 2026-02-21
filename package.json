@@ -4,14 +4,23 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
     "build": "vite build",
+    "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^1.25.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "lucide-react": "^0.575.0",
+    "motion": "^12.34.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@google/genai": "^1.25.0"
+    "recharts": "^3.7.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
