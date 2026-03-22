@@ -7,7 +7,10 @@ export enum TypePhase {
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type Language = 'english' | 'bengali';
-export type TestMode = 'passages' | 'custom' | 'timed' | 'sudden-death';
+export type TestMode = 'passages' | 'custom' | 'timed' | 'sudden-death' | 'daily' | 'multiplayer';
+
+export type CursorStyle = 'line' | 'block' | 'underline';
+export type SoundPack = 'web-audio' | 'mechanical' | 'typewriter' | 'soft';
 
 export interface WpmDataPoint {
     time: number;

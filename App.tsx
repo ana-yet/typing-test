@@ -1,12 +1,16 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { generateTypingText } from './services/geminiService';
+import { motion } from 'motion/react';
+import { generateTypingText, getDailyChallengeText } from './services/geminiService';
 import { translate as translateToAvro, isValidPhoneticPrefix } from './services/avroLayout';
 import { getRandomQuote, Quote } from './services/quotes';
 import StatsCard from './components/StatsCard';
 import Spinner from './components/Spinner';
 import AvroKeyboard from './components/AvroKeyboard';
-import { TypePhase } from './types';
+import ResultsModal from './components/ResultsModal';
+import MultiplayerPanel from './components/MultiplayerPanel';
+import DailyLeaderboard from './components/DailyLeaderboard';
+import { TypePhase, TestMode, CursorStyle, SoundPack, TestResults, WpmDataPoint } from './types';
 
 const themes = {
   dark: {
@@ -187,10 +191,14 @@ const App: React.FC = () => {
     
     const [language, setLanguage] = useState('english');
     const [difficulty, setDifficulty] = useState('medium');
-    const [mode, setMode] = useState<'passages' | 'custom'>('passages');
+    const [mode, setMode] = useState<TestMode>('passages');
     const [customTextInput, setCustomTextInput] = useState<string>('');
+    const [timeLimit, setTimeLimit] = useState<number>(30);
+    const [roomId, setRoomId] = useState<string>('');
     
     const [soundEnabled, setSoundEnabled] = useState(true);
+    const [soundPack, setSoundPack] = useState<SoundPack>('web-audio');
+    const [cursorStyle, setCursorStyle] = useState<CursorStyle>('line');
     const [activeKey, setActiveKey] = useState<string>('');
     const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
     const [theme, setTheme] = useState<string>('dark');
@@ -207,6 +215,9 @@ const App: React.FC = () => {
     const [errors, setErrors] = useState<number>(0);
     const [wordCount, setWordCount] = useState<number>(0);
     const [correctChars, setCorrectChars] = useState<number>(0);
+    const [wpmHistory, setWpmHistory] = useState<WpmDataPoint[]>([]);
+    const [missedChars, setMissedChars] = useState<Record<string, number>>({});
+    const [testResults, setTestResults] = useState<TestResults | null>(null);
 
     const [bestWpm, setBestWpm] = useState<number>(0);
     const [bestAccuracy, setBestAccuracy] = useState<number>(0);
@@ -290,6 +301,9 @@ const App: React.FC = () => {
         setErrors(0);
         setWordCount(0);
         setCorrectChars(0);
+        setWpmHistory([]);
+        setMissedChars({});
+        setTestResults(null);
         startTime.current = null;
         if (timerInterval.current) {
             clearInterval(timerInterval.current);
@@ -307,7 +321,16 @@ const App: React.FC = () => {
         resetState();
         setQuote(getRandomQuote());
         try {
-            const newText = generateTypingText(language, difficulty);
+            let newText = '';
+            if (mode === 'daily') {
+                const dateString = new Date().toISOString().split('T')[0];
+                newText = getDailyChallengeText(language, dateString);
+            } else if (mode === 'timed') {
+                // Generate a longer text for timed mode
+                newText = generateTypingText(language, difficulty) + ' ' + generateTypingText(language, difficulty) + ' ' + generateTypingText(language, difficulty);
+            } else {
+                newText = generateTypingText(language, difficulty);
+            }
             setTextToType(newText.trim());
         } catch (error) {
             console.error("Failed to generate text:", error);
@@ -398,13 +421,39 @@ const App: React.FC = () => {
         const now = ctx.currentTime;
 
         if (type === 'click') {
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(600, now);
-            osc.frequency.exponentialRampToValueAtTime(300, now + 0.03);
-            gain.gain.setValueAtTime(0.15, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-            osc.start(now);
-            osc.stop(now + 0.05);
+            if (soundPack === 'mechanical') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            } else if (soundPack === 'typewriter') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(200, now + 0.04);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                osc.start(now);
+                osc.stop(now + 0.04);
+            } else if (soundPack === 'soft') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            } else { // web-audio
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(300, now + 0.03);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            }
         } else {
             osc.type = 'sine'; 
             osc.frequency.setValueAtTime(120, now);
@@ -414,7 +463,7 @@ const App: React.FC = () => {
             osc.start(now);
             osc.stop(now + 0.15);
         }
-    }, [soundEnabled]);
+    }, [soundEnabled, soundPack]);
 
     const calculateStats = useCallback((currentInput: string, timeElapsed: number) => {
         if (timeElapsed < 0.2) return;
@@ -473,7 +522,24 @@ const App: React.FC = () => {
             startTime.current = Date.now();
             timerInterval.current = setInterval(() => {
                 if (startTime.current) {
-                    setElapsedTime((Date.now() - startTime.current) / 1000);
+                    const elapsed = (Date.now() - startTime.current) / 1000;
+                    
+                    if (mode === 'timed') {
+                        const remaining = Math.max(0, timeLimit - elapsed);
+                        setElapsedTime(remaining);
+                        if (remaining <= 0) {
+                            finishTest(currentText, timeLimit);
+                        }
+                    } else {
+                        setElapsedTime(elapsed);
+                    }
+
+                    // Record WPM history every second
+                    if (Math.floor(elapsed) > wpmHistory.length) {
+                        setWpmHistory(prev => {
+                            return [...prev, { time: Math.floor(elapsed), wpm: 0, accuracy: 0 }]; // Updated in calculateStats
+                        });
+                    }
                 }
             }, 100);
         }
@@ -486,12 +552,14 @@ const App: React.FC = () => {
             const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
             const lastTypedGraphemeIndex = currentGraphemes.length - 1;
             let isError = false;
+            let targetChar = '';
 
             if (lastTypedGraphemeIndex >= textGraphemes.length) {
                 isError = true;
             } else if (lastTypedGraphemeIndex >= 0) {
                 const typed = currentGraphemes[lastTypedGraphemeIndex];
                 const target = textGraphemes[lastTypedGraphemeIndex];
+                targetChar = target;
 
                 if (typed !== target) {
                     let suppressed = false;
@@ -512,6 +580,18 @@ const App: React.FC = () => {
             if (isError) {
                 playSystemSound('error');
                 triggerErrorVisual(lastTypedGraphemeIndex);
+                
+                if (targetChar) {
+                    setMissedChars(prev => ({
+                        ...prev,
+                        [targetChar]: (prev[targetChar] || 0) + 1
+                    }));
+                }
+
+                if (mode === 'sudden-death') {
+                    finishTest(currentText, elapsedTime);
+                    return;
+                }
             } else {
                 playSystemSound('click');
                 setErrorIndex(null);
@@ -524,30 +604,49 @@ const App: React.FC = () => {
         setRawInput(value);
         setUserInput(currentText);
 
-        if (normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
-            if (timerInterval.current) {
-                clearInterval(timerInterval.current);
-                timerInterval.current = null;
-            }
-            let finalTime = 0;
-            if (startTime.current) {
-                finalTime = (Date.now() - startTime.current) / 1000;
-            }
-            setElapsedTime(finalTime);
-            setPhase(TypePhase.Finished);
-            inputRef.current?.blur();
-            calculateStats(currentText, finalTime);
+        if (mode !== 'timed' && normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
+            finishTest(currentText, elapsedTime);
         }
+    };
+
+    const finishTest = (finalInput: string, finalTime: number) => {
+        if (timerInterval.current) {
+            clearInterval(timerInterval.current);
+            timerInterval.current = null;
+        }
+        
+        let actualFinalTime = finalTime;
+        if (mode !== 'timed' && startTime.current) {
+            actualFinalTime = (Date.now() - startTime.current) / 1000;
+        }
+
+        setElapsedTime(actualFinalTime);
+        setPhase(TypePhase.Finished);
+        inputRef.current?.blur();
+        calculateStats(finalInput, actualFinalTime);
     };
     
     useEffect(() => {
         if (phase === TypePhase.Typing) {
-            calculateStats(userInput, elapsedTime);
+            const timeToUse = mode === 'timed' ? timeLimit - elapsedTime : elapsedTime;
+            calculateStats(userInput, timeToUse);
+            
+            // Update the latest history point with real stats
+            setWpmHistory(prev => {
+                if (prev.length === 0) return prev;
+                const newHistory = [...prev];
+                newHistory[newHistory.length - 1] = {
+                    ...newHistory[newHistory.length - 1],
+                    wpm,
+                    accuracy
+                };
+                return newHistory;
+            });
         }
-    }, [elapsedTime, userInput, phase, calculateStats]);
+    }, [elapsedTime, userInput, phase, calculateStats, mode, timeLimit, wpm, accuracy]);
 
     useEffect(() => {
-        if (phase === TypePhase.Finished) {
+        if (phase === TypePhase.Finished && !testResults) {
             if (wpm > bestWpm) {
                 setBestWpm(wpm);
                 localStorage.setItem('bestWpm', wpm.toString());
@@ -556,8 +655,29 @@ const App: React.FC = () => {
                 setBestAccuracy(accuracy);
                 localStorage.setItem('bestAccuracy', accuracy.toString());
             }
+
+            if (mode === 'daily') {
+                const dateString = new Date().toISOString().split('T')[0];
+                const key = `daily_challenge_${dateString}`;
+                const existing = localStorage.getItem(key);
+                if (!existing || wpm > JSON.parse(existing).wpm) {
+                    localStorage.setItem(key, JSON.stringify({ wpm, accuracy, time: elapsedTime }));
+                }
+            }
+
+            setTestResults({
+                wpm,
+                rawWpm,
+                accuracy,
+                errors,
+                time: elapsedTime,
+                wordCount,
+                history: wpmHistory,
+                missedChars,
+                slowestWords: []
+            });
         }
-    }, [phase, wpm, accuracy, bestWpm, bestAccuracy]);
+    }, [phase, wpm, bestWpm, accuracy, bestAccuracy, rawWpm, errors, elapsedTime, wordCount, wpmHistory, missedChars, testResults, mode]);
 
     const handleSaveShortcuts = (newShortcuts: Record<ActionKey, string>) => {
         setShortcuts(newShortcuts);
@@ -600,11 +720,27 @@ const App: React.FC = () => {
                 <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-4 mb-8">
                     <div className="flex items-center gap-2">
                         <span className="text-[var(--text-secondary)]">Mode:</span>
-                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                        <div className="flex flex-wrap gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
                             <OptionButton value="passages" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Passages</OptionButton>
                             <OptionButton value="custom" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Custom</OptionButton>
+                            <OptionButton value="timed" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Timed</OptionButton>
+                            <OptionButton value="sudden-death" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Sudden Death</OptionButton>
+                            <OptionButton value="daily" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Daily</OptionButton>
+                            <OptionButton value="multiplayer" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Multiplayer</OptionButton>
                         </div>
                     </div>
+                    
+                    {mode === 'timed' && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-[var(--text-secondary)]">Time:</span>
+                            <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                                <OptionButton value={15} state={timeLimit as any} onClick={setTimeLimit} disabled={phase === TypePhase.Typing}>15s</OptionButton>
+                                <OptionButton value={30} state={timeLimit as any} onClick={setTimeLimit} disabled={phase === TypePhase.Typing}>30s</OptionButton>
+                                <OptionButton value={60} state={timeLimit as any} onClick={setTimeLimit} disabled={phase === TypePhase.Typing}>60s</OptionButton>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-2">
                         <span className="text-[var(--text-secondary)]">Language:</span>
                         <div className="flex items-center gap-2">
@@ -694,26 +830,78 @@ const App: React.FC = () => {
                     </div>
                 )}
                 
-                 <div className="flex items-center gap-2 mb-8">
-                    <span className="text-[var(--text-secondary)]">Theme:</span>
-                    <div className="flex gap-3 rounded-lg p-1 bg-[var(--bg-secondary)]">
-                        {Object.entries(themes).map(([themeKey, themeColors]) => (
-                            <button
-                                key={themeKey}
-                                title={themeKey}
-                                aria-label={`Select ${themeKey} theme`}
-                                onClick={() => setTheme(themeKey)}
-                                className={`w-8 h-6 rounded flex overflow-hidden border-2 transition-all ${
-                                    theme === themeKey ? 'border-[var(--accent-primary)] scale-110' : 'border-transparent hover:border-[var(--text-muted)]'
-                                }`}
-                                disabled={phase === TypePhase.Typing}
-                            >
-                                <div style={{ backgroundColor: themeColors['--bg-primary'] }} className="w-1/2 h-full"></div>
-                                <div style={{ backgroundColor: themeColors['--accent-primary'] }} className="w-1/2 h-full"></div>
-                            </button>
-                        ))}
+                 <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
+                    <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Theme:</span>
+                        <div className="flex gap-3 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            {Object.entries(themes).map(([themeKey, themeColors]) => (
+                                <button
+                                    key={themeKey}
+                                    title={themeKey}
+                                    aria-label={`Select ${themeKey} theme`}
+                                    onClick={() => setTheme(themeKey)}
+                                    className={`w-8 h-6 rounded flex overflow-hidden border-2 transition-all ${
+                                        theme === themeKey ? 'border-[var(--accent-primary)] scale-110' : 'border-transparent hover:border-[var(--text-muted)]'
+                                    }`}
+                                    disabled={phase === TypePhase.Typing}
+                                >
+                                    <div style={{ backgroundColor: themeColors['--bg-primary'] }} className="w-1/2 h-full"></div>
+                                    <div style={{ backgroundColor: themeColors['--accent-primary'] }} className="w-1/2 h-full"></div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Cursor:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            {(['line', 'block', 'underline'] as CursorStyle[]).map((style) => (
+                                <button
+                                    key={style}
+                                    onClick={() => setCursorStyle(style)}
+                                    className={`px-3 py-1 text-sm rounded transition-colors ${
+                                        cursorStyle === style ? 'bg-[var(--accent-primary)] text-[var(--text-primary-inverted)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                    }`}
+                                    disabled={phase === TypePhase.Typing}
+                                >
+                                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Sound:</span>
+                        <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            {(['web-audio', 'mechanical', 'typewriter', 'soft'] as SoundPack[]).map((pack) => (
+                                <button
+                                    key={pack}
+                                    onClick={() => setSoundPack(pack)}
+                                    className={`px-3 py-1 text-sm rounded transition-colors ${
+                                        soundPack === pack ? 'bg-[var(--accent-primary)] text-[var(--text-primary-inverted)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                    }`}
+                                    disabled={phase === TypePhase.Typing}
+                                >
+                                    {pack.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
+                
+                {mode === 'daily' && phase !== TypePhase.Typing && (
+                    <DailyLeaderboard />
+                )}
+
+                {mode === 'multiplayer' && (
+                    <MultiplayerPanel 
+                        roomId={roomId}
+                        setRoomId={setRoomId}
+                        progress={progress}
+                        wpm={wpm}
+                        playerName={`Player ${Math.floor(Math.random() * 1000)}`}
+                    />
+                )}
 
                 <div className="w-full bg-[var(--bg-secondary)] p-6 rounded-lg shadow-lg relative min-h-[120px]" onClick={focusInput}>
                     {loading ? (
@@ -727,54 +915,76 @@ const App: React.FC = () => {
                     ) : (
                         <>
                             <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
-                                {displayGraphemes.map(({ target, user }, index) => {
-                                    const isCursor = index === userInputGraphemes.length && phase !== TypePhase.Finished;
-                                    const isExtra = index >= textGraphemes.length;
-                                    
-                                    let charClassName = 'text-[var(--text-muted)]';
-                                    
-                                    if (user !== undefined) {
-                                        if (isExtra) {
-                                            charClassName = 'text-[var(--bg-incorrect)] opacity-80 border-b-2 border-[var(--bg-incorrect)]'; 
-                                        } else if (user === target) {
-                                            charClassName = 'text-[var(--text-correct)]';
-                                        } else {
-                                            charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
+                                {(() => {
+                                    const getCaretStyle = (style: CursorStyle) => {
+                                        switch (style) {
+                                            case 'block': return 'w-full h-full top-0 left-0 opacity-40';
+                                            case 'underline': return 'w-full h-[3px] bottom-0 left-0';
+                                            case 'line':
+                                            default: return 'w-[3px] h-[80%] top-[10%] -left-[1px] rounded-sm';
                                         }
-                                    }
-
-                                    if (index === errorIndex && !isExtra) {
-                                        charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
-                                    }
+                                    };
                                     
-                                    let cursorClass = '';
-                                    if (isCursor) {
-                                        cursorClass = 'cursor-active';
-                                        const lastIndex = index - 1;
-                                        const lastWasWrong = lastIndex >= 0 && (
-                                            lastIndex >= textGraphemes.length || 
-                                            (userInputGraphemes[lastIndex] !== textGraphemes[lastIndex])
-                                        );
+                                    return displayGraphemes.map(({ target, user }, index) => {
+                                        const isCursor = index === userInputGraphemes.length && phase !== TypePhase.Finished;
+                                        const isExtra = index >= textGraphemes.length;
                                         
-                                        if (lastWasWrong) {
-                                            cursorClass += ' cursor-error';
+                                        let charClassName = 'text-[var(--text-muted)]';
+                                        
+                                        if (user !== undefined) {
+                                            if (isExtra) {
+                                                charClassName = 'text-[var(--bg-incorrect)] opacity-80 border-b-2 border-[var(--bg-incorrect)]'; 
+                                            } else if (user === target) {
+                                                charClassName = 'text-[var(--text-correct)]';
+                                            } else {
+                                                charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm';
+                                            }
                                         }
-                                    }
 
-                                    return (
-                                        <span key={index} className={`relative inline-block ${charClassName} ${cursorClass}`}>
-                                            {isExtra ? user : (target === ' ' ? '\u00A0' : target)}
-                                        </span>
-                                    );
-                                })}
+                                        if (index === errorIndex && !isExtra) {
+                                            charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded-sm error-flash';
+                                        }
+                                        
+                                        let lastWasWrong = false;
+                                        if (isCursor) {
+                                            const lastIndex = index - 1;
+                                            lastWasWrong = lastIndex >= 0 && (
+                                                lastIndex >= textGraphemes.length || 
+                                                (userInputGraphemes[lastIndex] !== textGraphemes[lastIndex])
+                                            );
+                                        }
+
+                                        return (
+                                            <span key={index} className={`relative inline-block ${charClassName}`}>
+                                                {isCursor && (
+                                                    <motion.div
+                                                        layoutId="caret"
+                                                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                                        className={`absolute ${getCaretStyle(cursorStyle)} ${lastWasWrong ? 'bg-[var(--bg-incorrect)]' : 'bg-[var(--cursor-color)]'} animate-pulse`}
+                                                    />
+                                                )}
+                                                {isExtra ? user : (target === ' ' ? '\u00A0' : target)}
+                                            </span>
+                                        );
+                                    });
+                                })()}
                                 
                                 {phase !== TypePhase.Finished && userInputGraphemes.length === displayGraphemes.length && (
-                                     <span className={`relative inline-block cursor-active ${
-                                         (userInputGraphemes.length > 0 && (
-                                             userInputGraphemes.length > textGraphemes.length || 
-                                             userInputGraphemes[userInputGraphemes.length-1] !== textGraphemes[userInputGraphemes.length-1]
-                                         )) ? 'cursor-error' : ''
-                                     }`}>
+                                     <span className="relative inline-block">
+                                        <motion.div
+                                            layoutId="caret"
+                                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                            className={`absolute ${
+                                                cursorStyle === 'block' ? 'w-full h-full top-0 left-0 opacity-40' : 
+                                                cursorStyle === 'underline' ? 'w-full h-[3px] bottom-0 left-0' : 
+                                                'w-[3px] h-[80%] top-[10%] -left-[1px] rounded-sm'
+                                            } ${
+                                                (userInputGraphemes.length > 0 && (
+                                                    userInputGraphemes.length > textGraphemes.length || 
+                                                    userInputGraphemes[userInputGraphemes.length-1] !== textGraphemes[userInputGraphemes.length-1]
+                                                )) ? 'bg-[var(--bg-incorrect)]' : 'bg-[var(--cursor-color)]'
+                                            } animate-pulse`}
+                                        />
                                         &nbsp;
                                     </span>
                                 )}
@@ -843,6 +1053,13 @@ const App: React.FC = () => {
                             />
                         </div>
                     </div>
+                )}
+
+                {testResults && phase === TypePhase.Finished && (
+                    <ResultsModal 
+                        results={testResults} 
+                        onRestart={handleRestart} 
+                    />
                 )}
 
             </main>

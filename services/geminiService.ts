@@ -365,3 +365,24 @@ export function generateTypingText(language: string, difficulty: string): string
     const randomIndex = Math.floor(Math.random() * passages.length);
     return passages[randomIndex];
 }
+
+export function getDailyChallengeText(language: string, dateString: string): string {
+    const lang = language as Language;
+    // Always use medium difficulty for daily challenge to keep it consistent
+    const passages = texts[lang]?.['medium'];
+
+    if (!passages || passages.length === 0) {
+        return "The quick brown fox jumps over the lazy dog. This is a default sentence if the requested text is not found.";
+    }
+
+    // Simple hash function to get a deterministic index based on the date string
+    let hash = 0;
+    for (let i = 0; i < dateString.length; i++) {
+        const char = dateString.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    const index = Math.abs(hash) % passages.length;
+    return passages[index];
+}
