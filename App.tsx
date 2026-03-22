@@ -914,7 +914,7 @@ const App: React.FC = () => {
                         </div>
                     ) : (
                         <>
-                            <p className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
+                            <div className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words ${language === 'bengali' ? 'font-serif' : ''}`}>
                                 {(() => {
                                     const getCaretStyle = (style: CursorStyle) => {
                                         switch (style) {
@@ -988,7 +988,7 @@ const App: React.FC = () => {
                                         &nbsp;
                                     </span>
                                 )}
-                            </p>
+                            </div>
                             <input
                                 ref={inputRef}
                                 type="text"
