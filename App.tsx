@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { generateTypingText, getDailyChallengeText } from './services/geminiService';
-import { translate as translateToAvro, isValidPhoneticPrefix } from './services/avroLayout';
+import { translate as translateToAvro, isValidPhoneticPrefix, reverseTranslateFromAvro } from './services/avroLayout';
 import { getRandomQuote, Quote } from './services/quotes';
 import StatsCard from './components/StatsCard';
 import Spinner from './components/Spinner';
@@ -504,8 +504,12 @@ const App: React.FC = () => {
     }, [graphemeSplitter, textGraphemes]);
 
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value;
+        let value = e.target.value;
         if (phase === TypePhase.Finished) return;
+
+        if (language === 'bengali' && /[\u0980-\u09FF]/.test(value)) {
+            value = reverseTranslateFromAvro(value);
+        }
 
         if (errorTimeoutRef.current) {
             clearTimeout(errorTimeoutRef.current);

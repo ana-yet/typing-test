@@ -193,3 +193,52 @@ export function isValidPhoneticPrefix(partial: string, targetGrapheme: string): 
     }
     return false;
 }
+
+const reversePatterns: Record<string, string> = {
+    // Vowels (Independent)
+    'অ': 'a', 'আ': 'A', 'ই': 'i', 'ঈ': 'I', 'উ': 'u', 'ঊ': 'U', 'ঋ': 'rri', 'এ': 'e', 'ঐ': 'OI', 'ও': 'o', 'ঔ': 'OU',
+    // Vowels (Dependent / Kars)
+    'া': 'A', 'ি': 'i', 'ী': 'I', 'ু': 'u', 'ূ': 'U', 'ৃ': 'rri', 'ে': 'e', 'ৈ': 'OI', 'ো': 'o', 'ৌ': 'OU',
+    // Consonants
+    'ক': 'k', 'খ': 'kh', 'গ': 'g', 'ঘ': 'gh', 'ঙ': 'Ng', 'চ': 'c', 'ছ': 'ch', 'জ': 'j', 'ঝ': 'jh', 'ঞ': 'NG', 'ট': 'T', 'ঠ': 'Th', 'ড': 'D', 'ঢ': 'Dh', 'ণ': 'N', 'ত': 't', 'থ': 'th', 'দ': 'd', 'ধ': 'dh', 'ন': 'n', 'প': 'p', 'ফ': 'ph', 'ব': 'b', 'ভ': 'bh', 'ম': 'm', 'য': 'z', 'য়': 'y', 'র': 'r', 'ল': 'l', 'শ': 'sh', 'ষ': 'S', 'স': 's', 'হ': 'h', 'ড়': 'R', 'ঢ়': 'Rh',
+    // Complex Conjunct Shortcuts
+    'ক্ষ': 'kkh', 'ক্স': 'x',
+    // Symbols & Special
+    'ং': 'ng', 'ঃ': ':', 'ঁ': '^', 'ৎ': 't`', '৳': '$', '।': '.', '.': '..',
+    // Modifiers
+    '্য': 'y', '্ব': 'w',
+    // Hasanto
+    '্': '',
+};
+
+const bengaliConsonants = new Set([
+    'ক', 'খ', 'গ', 'ঘ', 'ঙ', 'চ', 'ছ', 'জ', 'ঝ', 'ঞ', 'ট', 'ঠ', 'ড', 'ঢ', 'ণ', 'ত', 'থ', 'দ', 'ধ', 'ন', 'প', 'ফ', 'ব', 'ভ', 'ম', 'য', 'য়', 'র', 'ল', 'শ', 'ষ', 'স', 'হ', 'ড়', 'ঢ়', 'ক্ষ', 'ক্স'
+]);
+
+const bengaliIndependentVowels = new Set([
+    'অ', 'আ', 'ই', 'ঈ', 'উ', 'ঊ', 'ঋ', 'এ', 'ঐ', 'ও', 'ঔ'
+]);
+
+export function reverseTranslateFromAvro(bengaliText: string): string {
+    let result = '';
+    const normalized = bengaliText.normalize('NFC');
+    
+    for (let i = 0; i < normalized.length; i++) {
+        const char = normalized[i];
+        const nextChar = i + 1 < normalized.length ? normalized[i + 1] : null;
+        
+        if (reversePatterns[char] !== undefined) {
+            result += reversePatterns[char];
+            
+            // If current char is a consonant, check if we need to insert 'a'
+            if (bengaliConsonants.has(char)) {
+                if (nextChar && (bengaliConsonants.has(nextChar) || bengaliIndependentVowels.has(nextChar))) {
+                    result += 'a';
+                }
+            }
+        } else {
+            result += char;
+        }
+    }
+    return result;
+}
