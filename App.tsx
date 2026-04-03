@@ -346,8 +346,13 @@ const App: React.FC = () => {
     }, [fetchText]);
 
     const handleRestart = useCallback(() => {
-        fetchText();
-    }, [fetchText]);
+        if (mode === 'custom') {
+            resetState();
+            setTimeout(() => inputRef.current?.focus(), 50);
+        } else {
+            fetchText();
+        }
+    }, [fetchText, mode, resetState]);
 
     const handleSetCustomText = () => {
         if (!customTextInput.trim()) {
