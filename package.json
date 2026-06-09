@@ -12,15 +12,18 @@
   "dependencies": {
     "@google/genai": "^1.25.0",
     "cors": "^2.8.6",
+    "date-fns": "^4.4.0",
     "express": "^5.2.1",
     "lucide-react": "^0.575.0",
     "motion": "^12.34.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router-dom": "^7.17.0",
     "recharts": "^3.7.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

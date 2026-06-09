@@ -1,0 +1,1025 @@
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { motion } from 'motion/react';
+import { generateTypingText, getDailyChallengeText } from '../services/geminiService';
+import { translate as translateToAvro, isValidPhoneticPrefix, reverseTranslateFromAvro } from '../services/avroLayout';
+import { getRandomQuote, Quote } from '../services/quotes';
+import StatsCard from '../components/StatsCard';
+import Spinner from '../components/Spinner';
+import AvroKeyboard from '../components/AvroKeyboard';
+import ResultsModal from '../components/ResultsModal';
+import MultiplayerPanel from '../components/MultiplayerPanel';
+import DailyLeaderboard from '../components/DailyLeaderboard';
+import { TypePhase, TestMode, TestResults, WpmDataPoint } from '../types';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useHistoryStore } from '../store/useHistoryStore';
+
+const themes: Record<string, any> = {
+  dark: {
+    '--bg-primary': '#0f172a',
+    '--bg-secondary': '#1e293b',
+    '--bg-tertiary': '#334155',
+    '--bg-tertiary-hover': '#475569',
+    '--text-primary': '#f1f5f9',
+    '--text-primary-inverted': '#ffffff',
+    '--text-secondary': '#94a3b8',
+    '--text-muted': '#64748b',
+    '--accent-primary': '#38bdf8',
+    '--accent-secondary': '#0ea5e9',
+    '--accent-secondary-hover': '#38bdf8',
+    '--text-correct': '#4ade80',
+    '--bg-incorrect': '#ef4444',
+    '--text-incorrect': '#ffffff',
+    '--border-key': '#0f172a',
+    '--accent-primary-faded': '#7dd3fc',
+    '--cursor-color': '#38bdf8',
+  },
+  light: {
+    '--bg-primary': '#f1f5f9', // slate-100
+    '--bg-secondary': '#ffffff', // white
+    '--bg-tertiary': '#e2e8f0', // slate-200
+    '--bg-tertiary-hover': '#cbd5e1', // slate-300
+    '--text-primary': '#0f172a', // slate-900
+    '--text-primary-inverted': '#ffffff',
+    '--text-secondary': '#475569', // slate-600
+    '--text-muted': '#94a3b8', // slate-400
+    '--accent-primary': '#0ea5e9', // sky-600
+    '--accent-secondary': '#0284c7', // sky-700
+    '--accent-secondary-hover': '#0369a1', // sky-800
+    '--text-correct': '#16a34a', // green-600
+    '--bg-incorrect': '#fecaca', // red-200
+    '--text-incorrect': '#b91c1c', // red-800
+    '--border-key': '#f1f5f9', // slate-100
+    '--accent-primary-faded': '#38bdf8', // sky-400
+    '--cursor-color': '#0ea5e9', // sky-600
+  },
+  matrix: {
+    '--bg-primary': '#000000', // black
+    '--bg-secondary': '#0D0208', // very dark
+    '--bg-tertiary': '#003B00', // dark green
+    '--bg-tertiary-hover': '#005a00',
+    '--text-primary': '#00FF00', // green
+    '--text-primary-inverted': '#000000',
+    '--text-secondary': '#00b300', // lighter green
+    '--text-muted': '#008000', // medium green
+    '--accent-primary': '#39FF14', // neon green
+    '--accent-secondary': '#00FF00', // green
+    '--accent-secondary-hover': '#39FF14', // neon green
+    '--text-correct': '#39FF14', // neon green
+    '--bg-incorrect': '#FF0000', // red
+    '--text-incorrect': '#000000',
+    '--border-key': '#000000', // black
+    '--accent-primary-faded': '#00FF00', // green
+    '--cursor-color': '#39FF14', // neon green
+  },
+};
+
+type ActionKey = 'restart' | 'toggleSound' | 'toggleAvroChart';
+
+const DEFAULT_SHORTCUTS: Record<ActionKey, string> = {
+    restart: 'Control+Shift+R',
+    toggleSound: 'Control+Shift+S',
+    toggleAvroChart: 'Control+Shift+A',
+};
+
+const formatShortcut = (e: KeyboardEvent | React.KeyboardEvent): string => {
+    const key = e.key.toLowerCase() === ' ' ? 'Space' : e.key;
+
+    if (['control', 'alt', 'shift', 'meta'].includes(key.toLowerCase())) {
+        return '';
+    }
+
+    const parts = [];
+    if (e.ctrlKey) parts.push('Control');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Meta');
+    
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+        parts.push(e.key.toUpperCase());
+    }
+    
+    return parts.length > 1 ? parts.join('+') : '';
+};
+
+const ShortcutsModal: React.FC<{
+    currentShortcuts: Record<ActionKey, string>;
+    onClose: () => void;
+    onSave: (newShortcuts: Record<ActionKey, string>) => void;
+    language: string;
+}> = ({ currentShortcuts, onClose, onSave, language }) => {
+    const [tempShortcuts, setTempShortcuts] = useState(currentShortcuts);
+    const [listeningFor, setListeningFor] = useState<ActionKey | null>(null);
+
+    const handleKeyDown = (e: React.KeyboardEvent, action: ActionKey) => {
+        e.preventDefault();
+        const newShortcut = formatShortcut(e);
+        if (newShortcut) {
+            const isDuplicate = Object.values(tempShortcuts).some(
+                (sc, i) => sc === newShortcut && Object.keys(tempShortcuts)[i] !== action
+            );
+
+            if (isDuplicate) {
+                alert(`Shortcut "${newShortcut}" is already in use.`);
+            } else {
+                setTempShortcuts(prev => ({ ...prev, [action]: newShortcut }));
+            }
+        }
+        setListeningFor(null);
+    };
+
+    const actionLabels: Record<ActionKey, string> = {
+        restart: 'Restart Test',
+        toggleSound: 'Toggle Sound',
+        toggleAvroChart: 'Show/Hide Avro Chart',
+    };
+
+    let actions: ActionKey[] = ['restart', 'toggleSound'];
+    if (language === 'bengali') {
+        actions.push('toggleAvroChart');
+    }
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
+            <div className="bg-[var(--bg-secondary)] p-6 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">Customize Shortcuts</h2>
+                    <button onClick={onClose} className="p-1 rounded-full text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]" aria-label="Close shortcuts modal">
+                       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div className="space-y-4">
+                    {actions.map(action => (
+                        <div key={action} className="flex items-center justify-between">
+                            <label htmlFor={`shortcut-${action}`} className="text-[var(--text-secondary)]">{actionLabels[action]}</label>
+                            <input
+                                id={`shortcut-${action}`}
+                                type="text"
+                                readOnly
+                                value={listeningFor === action ? 'Press a combination...' : tempShortcuts[action]}
+                                onFocus={() => setListeningFor(action)}
+                                onBlur={() => setListeningFor(null)}
+                                onKeyDown={(e) => handleKeyDown(e, action)}
+                                className="w-48 bg-[var(--bg-tertiary)] rounded-md p-2 text-center text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-secondary)]"
+                            />
+                        </div>
+                    ))}
+                </div>
+                <div className="flex justify-end gap-4 mt-8">
+                    <button onClick={onClose} className="px-4 py-2 bg-[var(--bg-tertiary)] text-[var(--text-primary)] font-bold rounded-lg hover:bg-[var(--bg-tertiary-hover)] transition-colors">Cancel</button>
+                    <button onClick={() => onSave(tempShortcuts)} className="px-4 py-2 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] font-bold rounded-lg hover:bg-[var(--accent-secondary-hover)] transition-colors">Save</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
+    <div className="w-full max-w-3xl h-2 bg-[var(--bg-tertiary)] rounded-full mb-8 overflow-hidden shadow-inner">
+        <div 
+            className="h-full bg-[var(--accent-primary)] transition-all duration-200 ease-out"
+            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+        />
+    </div>
+);
+
+
+const Arena: React.FC = () => {
+    const [phase, setPhase] = useState<TypePhase>(TypePhase.Idle);
+    const [textToType, setTextToType] = useState<string>('');
+    const [userInput, setUserInput] = useState<string>(''); // This will hold the Bengali text
+    const [rawInput, setRawInput] = useState<string>(''); // This will hold the raw English input
+    const [loading, setLoading] = useState<boolean>(true);
+    
+    const [difficulty, setDifficulty] = useState('medium');
+    const [mode, setMode] = useState<TestMode>('passages');
+    const [customTextInput, setCustomTextInput] = useState<string>('');
+    const [timeLimit, setTimeLimit] = useState<number>(30);
+    const [roomId, setRoomId] = useState<string>('');
+    
+    const [activeKey, setActiveKey] = useState<string>('');
+    const [showAvroChart, setShowAvroChart] = useState<boolean>(false);
+    const [errorIndex, setErrorIndex] = useState<number | null>(null);
+
+    const { theme, cursorStyle, soundPack, soundEnabled, language, zenMode, setSoundEnabled, setTheme, setLanguage } = useSettingsStore();
+    const { addTestResult, mistakeHeatmap } = useHistoryStore();
+
+    const startTime = useRef<number | null>(null);
+    const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const [elapsedTime, setElapsedTime] = useState<number>(0);
+    const [wpm, setWpm] = useState<number>(0);
+    const [rawWpm, setRawWpm] = useState<number>(0);
+    const [accuracy, setAccuracy] = useState<number>(100);
+    const [errors, setErrors] = useState<number>(0);
+    const [wordCount, setWordCount] = useState<number>(0);
+    const [correctChars, setCorrectChars] = useState<number>(0);
+    const [wpmHistory, setWpmHistory] = useState<WpmDataPoint[]>([]);
+    const [missedChars, setMissedChars] = useState<Record<string, number>>({});
+    const [testResults, setTestResults] = useState<TestResults | null>(null);
+
+    const [bestWpm, setBestWpm] = useState<number>(0);
+    const [bestAccuracy, setBestAccuracy] = useState<number>(0);
+    
+    const [quote, setQuote] = useState<Quote | null>(null);
+    
+    const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
+    const [shortcuts, setShortcuts] = useState<Record<ActionKey, string>>(DEFAULT_SHORTCUTS);
+
+    const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const graphemeSplitter = useMemo(() => new (Intl as any).Segmenter(), []);
+    const textGraphemes = useMemo(() => 
+        textToType ? [...graphemeSplitter.segment(textToType)].map(s => s.segment) : [], 
+        [textToType, graphemeSplitter]
+    );
+    const userInputGraphemes = useMemo(() => 
+        userInput ? [...graphemeSplitter.segment(userInput)].map(s => s.segment) : [], 
+        [userInput, graphemeSplitter]
+    );
+
+    // Combine text and user input for rendering to handle extra typed characters
+    const displayGraphemes = useMemo(() => {
+        const length = Math.max(textGraphemes.length, userInputGraphemes.length);
+        return Array.from({ length }, (_, i) => ({
+            target: textGraphemes[i], // undefined if i >= text length
+            user: userInputGraphemes[i] // undefined if i >= user length
+        }));
+    }, [textGraphemes, userInputGraphemes]);
+
+    useEffect(() => {
+        const storedBestWpm = localStorage.getItem('bestWpm');
+        const storedBestAccuracy = localStorage.getItem('bestAccuracy');
+        const storedShortcuts = localStorage.getItem('keyboardShortcuts');
+
+        if (storedBestWpm) setBestWpm(parseInt(storedBestWpm, 10) || 0);
+        if (storedBestAccuracy) setBestAccuracy(parseFloat(storedBestAccuracy) || 0);
+        if (storedShortcuts) {
+            try {
+                const parsed = JSON.parse(storedShortcuts);
+                setShortcuts(prev => ({ ...prev, ...parsed }));
+            } catch (e) {
+                console.error("Failed to parse shortcuts from localStorage", e);
+                localStorage.removeItem('keyboardShortcuts');
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        const currentTheme = themes[theme] || themes.dark;
+        const root = document.documentElement;
+        Object.keys(currentTheme).forEach(key => {
+            root.style.setProperty(key, currentTheme[key]);
+        });
+    }, [theme]);
+    
+    useEffect(() => {
+        const handleWindowKeyDown = (e: KeyboardEvent) => setActiveKey(e.key);
+        const handleWindowKeyUp = () => setActiveKey('');
+        window.addEventListener('keydown', handleWindowKeyDown);
+        window.addEventListener('keyup', handleWindowKeyUp);
+        return () => {
+            window.removeEventListener('keydown', handleWindowKeyDown);
+            window.removeEventListener('keyup', handleWindowKeyUp);
+        };
+    }, []);
+
+    const resetState = useCallback(() => {
+        setPhase(TypePhase.Idle);
+        setUserInput('');
+        setRawInput('');
+        setElapsedTime(0);
+        setWpm(0);
+        setRawWpm(0);
+        setAccuracy(100);
+        setErrors(0);
+        setWordCount(0);
+        setCorrectChars(0);
+        setWpmHistory([]);
+        setMissedChars({});
+        setTestResults(null);
+        startTime.current = null;
+        if (timerInterval.current) {
+            clearInterval(timerInterval.current);
+            timerInterval.current = null;
+        }
+    }, []);
+
+    const fetchText = useCallback(() => {
+        if (mode === 'custom') {
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        resetState();
+        setQuote(getRandomQuote());
+        try {
+            let newText = '';
+            if (mode === 'code') {
+                const codeSnippets = [
+                    "function calculateArea(radius) {\n  return Math.PI * radius * radius;\n}",
+                    "const fetchUser = async (id) => {\n  const res = await fetch(`/api/users/${id}`);\n  return res.json();\n};",
+                    "class Animal {\n  constructor(name) {\n    this.name = name;\n  }\n  speak() {\n    console.log(`${this.name} makes a noise.`);\n  }\n}"
+                ];
+                newText = codeSnippets[Math.floor(Math.random() * codeSnippets.length)];
+                setQuote(null);
+            } else if (mode === 'daily') {
+                const dateString = new Date().toISOString().split('T')[0];
+                newText = getDailyChallengeText(language, dateString);
+            } else if (mode === 'timed') {
+                // Generate a longer text for timed mode
+                newText = generateTypingText(language, difficulty) + ' ' + generateTypingText(language, difficulty) + ' ' + generateTypingText(language, difficulty);
+            } else {
+                newText = generateTypingText(language, difficulty);
+            }
+            setTextToType(newText.trim());
+        } catch (error) {
+            console.error("Failed to generate text:", error);
+            setTextToType("The quick brown fox jumps over the lazy dog. Please try refreshing the page.");
+        } finally {
+            setLoading(false);
+            setTimeout(() => inputRef.current?.focus(), 50);
+        }
+    }, [language, difficulty, mode, resetState]);
+
+    useEffect(() => {
+        fetchText();
+    }, [fetchText]);
+
+    const handleRestart = useCallback(() => {
+        if (mode === 'custom') {
+            resetState();
+            setTimeout(() => inputRef.current?.focus(), 50);
+        } else {
+            fetchText();
+        }
+    }, [fetchText, mode, resetState]);
+
+    const handleSetCustomText = () => {
+        if (!customTextInput.trim()) {
+            alert("Please enter some text to practice.");
+            return;
+        }
+        setTextToType(customTextInput.trim());
+        resetState();
+        setTimeout(() => inputRef.current?.focus(), 50);
+    };
+
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            if (showShortcutsModal) return;
+
+            const target = e.target as HTMLElement;
+            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+            const pressedShortcut = formatShortcut(e);
+            if (!pressedShortcut) return;
+
+            const action = (Object.keys(shortcuts) as ActionKey[]).find(key => shortcuts[key] === pressedShortcut);
+
+            if (action) {
+                // If we're in an input, only allow shortcuts that use Ctrl, Alt, or Meta
+                // to prevent overriding normal typing (like Shift+A)
+                if (isInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    return;
+                }
+
+                e.preventDefault();
+                switch (action) {
+                    case 'restart':
+                        handleRestart();
+                        break;
+                    case 'toggleSound':
+                        setSoundEnabled(prev => !prev);
+                        break;
+                    case 'toggleAvroChart':
+                        if (language === 'bengali') {
+                            setShowAvroChart(prev => !prev);
+                        }
+                        break;
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [shortcuts, showShortcutsModal, language, handleRestart]);
+
+    const playSystemSound = useCallback((type: 'click' | 'error') => {
+        if (!soundEnabled) return;
+
+        if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        if (audioContextRef.current.state === 'suspended') {
+             audioContextRef.current.resume();
+        }
+
+        const ctx = audioContextRef.current;
+        if (!ctx) return;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const now = ctx.currentTime;
+
+        if (type === 'click') {
+            if (soundPack === 'mechanical') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            } else if (soundPack === 'typewriter') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(200, now + 0.04);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                osc.start(now);
+                osc.stop(now + 0.04);
+            } else if (soundPack === 'soft') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            } else { // web-audio
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(300, now + 0.03);
+                gain.gain.setValueAtTime(0.15, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            }
+        } else {
+            osc.type = 'sine'; 
+            osc.frequency.setValueAtTime(120, now);
+            osc.frequency.linearRampToValueAtTime(80, now + 0.1);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+            osc.start(now);
+            osc.stop(now + 0.15);
+        }
+    }, [soundEnabled, soundPack]);
+
+    const calculateStats = useCallback((currentInput: string, timeElapsed: number) => {
+        if (timeElapsed < 0.2) return;
+
+        const currentGraphemes = [...graphemeSplitter.segment(currentInput)].map(s => s.segment);
+        const typedGraphemeCount = currentGraphemes.length;
+        
+        let currentErrors = 0;
+        let correctGraphemeCount = 0;
+        let correctCharsLength = 0; 
+
+        for (let i = 0; i < typedGraphemeCount; i++) {
+            if (i >= textGraphemes.length || currentGraphemes[i] !== textGraphemes[i]) {
+                currentErrors++;
+            } else {
+                correctGraphemeCount++;
+                correctCharsLength += currentGraphemes[i].length;
+            }
+        }
+        
+        setErrors(currentErrors);
+        setCorrectChars(correctGraphemeCount);
+
+        const currentAccuracy = typedGraphemeCount > 0 ? (correctGraphemeCount / typedGraphemeCount) * 100 : 100;
+        setAccuracy(currentAccuracy);
+        
+        const words = currentInput.trim() === '' ? [] : currentInput.trim().split(/\s+/);
+        setWordCount(words.length);
+
+        const minutes = timeElapsed / 60;
+        if (minutes > 0) {
+             const netWpm = Math.round((correctCharsLength / 5) / minutes);
+             const grossWpm = Math.round((currentInput.length / 5) / minutes);
+             setWpm(Math.max(0, netWpm));
+             setRawWpm(Math.max(0, grossWpm));
+        }
+
+    }, [graphemeSplitter, textGraphemes]);
+
+    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let value = e.target.value;
+        if (phase === TypePhase.Finished) return;
+
+        if (language === 'bengali' && /[\u0980-\u09FF]/.test(value)) {
+            value = reverseTranslateFromAvro(value);
+        }
+
+        if (errorTimeoutRef.current) {
+            clearTimeout(errorTimeoutRef.current);
+            errorTimeoutRef.current = null;
+        }
+
+        const triggerErrorVisual = (index: number) => {
+            setErrorIndex(index);
+            errorTimeoutRef.current = setTimeout(() => setErrorIndex(null), 300);
+        };
+        
+        if (phase === TypePhase.Idle && value.length > 0) {
+            setPhase(TypePhase.Typing);
+            startTime.current = Date.now();
+            timerInterval.current = setInterval(() => {
+                if (startTime.current) {
+                    const elapsed = (Date.now() - startTime.current) / 1000;
+                    
+                    if (mode === 'timed') {
+                        const remaining = Math.max(0, timeLimit - elapsed);
+                        setElapsedTime(remaining);
+                        if (remaining <= 0) {
+                            finishTest(currentText, timeLimit);
+                        }
+                    } else {
+                        setElapsedTime(elapsed);
+                    }
+
+                    // Record WPM history every second
+                    if (Math.floor(elapsed) > wpmHistory.length) {
+                        setWpmHistory(prev => {
+                            return [...prev, { time: Math.floor(elapsed), wpm: 0, accuracy: 0 }]; // Updated in calculateStats
+                        });
+                    }
+                }
+            }, 100);
+        }
+        
+        const currentText = language === 'bengali' ? translateToAvro(value) : value;
+        const normalizedCurrent = currentText.normalize('NFC');
+        const normalizedTarget = textToType.normalize('NFC');
+
+        if (value.length > rawInput.length) {
+            const currentGraphemes = [...graphemeSplitter.segment(currentText)].map(s => s.segment);
+            const lastTypedGraphemeIndex = currentGraphemes.length - 1;
+            let isError = false;
+            let targetChar = '';
+
+            if (lastTypedGraphemeIndex >= textGraphemes.length) {
+                isError = true;
+            } else if (lastTypedGraphemeIndex >= 0) {
+                const typed = currentGraphemes[lastTypedGraphemeIndex];
+                const target = textGraphemes[lastTypedGraphemeIndex];
+                targetChar = target;
+
+                if (typed !== target) {
+                    let suppressed = false;
+                    if (language === 'bengali') {
+                        if (target.startsWith(typed)) {
+                            suppressed = true;
+                        } else {
+                            const possibleSuffixes = [1, 2, 3].map(len => value.slice(-len));
+                            if (possibleSuffixes.some(suffix => isValidPhoneticPrefix(suffix, target))) {
+                                suppressed = true;
+                            }
+                        }
+                    }
+                    if (!suppressed) isError = true;
+                }
+            }
+
+            if (isError) {
+                playSystemSound('error');
+                triggerErrorVisual(lastTypedGraphemeIndex);
+                
+                if (targetChar) {
+                    setMissedChars(prev => ({
+                        ...prev,
+                        [targetChar]: (prev[targetChar] || 0) + 1
+                    }));
+                }
+
+                if (mode === 'sudden-death') {
+                    finishTest(currentText, elapsedTime);
+                    return;
+                }
+            } else {
+                playSystemSound('click');
+                setErrorIndex(null);
+            }
+        } else {
+            playSystemSound('click');
+            setErrorIndex(null);
+        }
+        
+        setRawInput(value);
+        setUserInput(currentText);
+
+        if (mode !== 'timed' && normalizedTarget.length > 0 && normalizedCurrent.length >= normalizedTarget.length) {
+            finishTest(currentText, elapsedTime);
+        }
+    };
+
+    const finishTest = (finalInput: string, finalTime: number) => {
+        if (timerInterval.current) {
+            clearInterval(timerInterval.current);
+            timerInterval.current = null;
+        }
+        
+        let actualFinalTime = finalTime;
+        if (mode !== 'timed' && startTime.current) {
+            actualFinalTime = (Date.now() - startTime.current) / 1000;
+        }
+
+        setElapsedTime(actualFinalTime);
+        setPhase(TypePhase.Finished);
+        inputRef.current?.blur();
+        calculateStats(finalInput, actualFinalTime);
+    };
+    
+    useEffect(() => {
+        if (phase === TypePhase.Typing) {
+            const timeToUse = mode === 'timed' ? timeLimit - elapsedTime : elapsedTime;
+            calculateStats(userInput, timeToUse);
+            
+            // Update the latest history point with real stats
+            setWpmHistory(prev => {
+                if (prev.length === 0) return prev;
+                const newHistory = [...prev];
+                newHistory[newHistory.length - 1] = {
+                    ...newHistory[newHistory.length - 1],
+                    wpm,
+                    accuracy
+                };
+                return newHistory;
+            });
+        }
+    }, [elapsedTime, userInput, phase, calculateStats, mode, timeLimit, wpm, accuracy]);
+
+    useEffect(() => {
+        if (phase === TypePhase.Finished && !testResults) {
+            if (wpm > bestWpm) {
+                setBestWpm(wpm);
+                localStorage.setItem('bestWpm', wpm.toString());
+            }
+            if (accuracy > bestAccuracy) {
+                setBestAccuracy(accuracy);
+                localStorage.setItem('bestAccuracy', accuracy.toString());
+            }
+
+            if (mode === 'daily') {
+                const dateString = new Date().toISOString().split('T')[0];
+                const key = `daily_challenge_${dateString}`;
+                const existing = localStorage.getItem(key);
+                if (!existing || wpm > JSON.parse(existing).wpm) {
+                    localStorage.setItem(key, JSON.stringify({ wpm, accuracy, time: elapsedTime }));
+                }
+            }
+            
+            addTestResult({
+                date: Date.now(),
+                wpm,
+                rawWpm,
+                accuracy,
+                mode,
+                duration: elapsedTime,
+                mistakes: missedChars
+            });
+
+            setTestResults({
+                wpm,
+                rawWpm,
+                accuracy,
+                errors,
+                time: elapsedTime,
+                wordCount,
+                history: wpmHistory,
+                missedChars,
+                slowestWords: []
+            });
+        }
+    }, [phase, wpm, bestWpm, accuracy, bestAccuracy, rawWpm, errors, elapsedTime, wordCount, wpmHistory, missedChars, testResults, mode, addTestResult]);
+
+    const handleSaveShortcuts = (newShortcuts: Record<ActionKey, string>) => {
+        setShortcuts(newShortcuts);
+        localStorage.setItem('keyboardShortcuts', JSON.stringify(newShortcuts));
+        setShowShortcutsModal(false);
+    };
+
+    const focusInput = () => {
+      inputRef.current?.focus();
+    }
+    
+    const timeValue = elapsedTime.toFixed(2);
+    const progress = textToType.length > 0 ? (userInput.length / textToType.length) * 100 : 0;
+
+    const OptionButton: React.FC<{ value: string; state: string; onClick: (value: any) => void; children: React.ReactNode; disabled?: boolean; }> = 
+        ({ value, state, onClick, children, disabled }) => (
+        <button 
+            onClick={() => onClick(value)}
+            className={`px-3 py-1 text-sm rounded-md transition-colors capitalize ${state === value ? 'bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)]' : 'bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)]'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={disabled}
+        >
+            {children}
+        </button>
+    );
+
+    return (
+        <div className="flex flex-col items-center flex-1 font-mono transition-colors duration-300">
+            {showShortcutsModal && (
+                <ShortcutsModal 
+                    currentShortcuts={shortcuts}
+                    onClose={() => setShowShortcutsModal(false)}
+                    onSave={handleSaveShortcuts}
+                    language={language}
+                />
+            )}
+            <div className="w-full max-w-4xl mx-auto flex flex-col items-center">
+                <h1 className="text-4xl sm:text-5xl font-bold text-[var(--accent-primary)] mb-4 text-center">Typing Speed Test</h1>
+                <p className="text-[var(--text-secondary)] mb-6 text-center">Type the text below as fast and accurately as you can.</p>
+
+                <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-4 mb-8">
+                    <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Mode:</span>
+                        <div className="flex flex-wrap gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            <OptionButton value="passages" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Passages</OptionButton>
+                            <OptionButton value="custom" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Custom</OptionButton>
+                            <OptionButton value="timed" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Timed</OptionButton>
+                            <OptionButton value="sudden-death" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Sudden Death</OptionButton>
+                            <OptionButton value="daily" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Daily</OptionButton>
+                            <OptionButton value="multiplayer" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Multiplayer</OptionButton>
+                            <OptionButton value="code" state={mode} onClick={setMode} disabled={phase === TypePhase.Typing}>Code</OptionButton>
+                        </div>
+                    </div>
+                    
+                    {mode === 'timed' && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-[var(--text-secondary)]">Time:</span>
+                            <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                                <OptionButton value={15} state={timeLimit as any} onClick={setTimeLimit} disabled={phase === TypePhase.Typing}>15s</OptionButton>
+                                <OptionButton value={30} state={timeLimit as any} onClick={setTimeLimit} disabled={phase === TypePhase.Typing}>30s</OptionButton>
+                                <OptionButton value={60} state={timeLimit as any} onClick={setTimeLimit} disabled={phase === TypePhase.Typing}>60s</OptionButton>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                        <span className="text-[var(--text-secondary)]">Language:</span>
+                        <div className="flex items-center gap-2">
+                            <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                                <OptionButton value="english" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>English</OptionButton>
+                                <OptionButton value="bengali" state={language} onClick={setLanguage} disabled={phase === TypePhase.Typing}>Bengali</OptionButton>
+                            </div>
+                            {language === 'bengali' && (
+                                <button
+                                    onClick={() => setShowAvroChart(!showAvroChart)}
+                                    title={`Show Avro Keyboard Layout (${shortcuts.toggleAvroChart})`}
+                                    className="p-1.5 rounded-md bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                     {mode === 'passages' && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-[var(--text-secondary)]">Difficulty:</span>
+                            <div className="flex gap-2 rounded-lg p-1 bg-[var(--bg-secondary)]">
+                            <OptionButton value="easy" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Easy</OptionButton>
+                            <OptionButton value="medium" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Medium</OptionButton>
+                            <OptionButton value="hard" state={difficulty} onClick={setDifficulty} disabled={phase === TypePhase.Typing}>Hard</OptionButton>
+                            </div>
+                        </div>
+                     )}
+                </div>
+
+                {mode === 'custom' && phase === TypePhase.Idle && (
+                    <div className="w-full max-w-3xl mb-8 flex flex-col gap-4 animate-fade-in">
+                        <textarea
+                            value={customTextInput}
+                            onChange={(e) => setCustomTextInput(e.target.value)}
+                            placeholder="Paste your custom text here..."
+                            className="w-full h-32 p-4 rounded-lg bg-[var(--bg-secondary)] border border-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-secondary)] transition-all resize-none"
+                        />
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs text-[var(--text-secondary)]">{customTextInput.length} characters</span>
+                            <button
+                                onClick={handleSetCustomText}
+                                className="px-4 py-2 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] rounded-md hover:bg-[var(--accent-secondary-hover)] transition-colors"
+                            >
+                                Set Custom Text
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl mb-8 transition-opacity duration-300 ${(zenMode && phase === TypePhase.Typing) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                    <StatsCard label="WPM" value={wpm} />
+                    <StatsCard label="Accuracy" value={accuracy.toFixed(0)} unit="%" />
+                    <StatsCard label="Time" value={timeValue} unit="s" />
+                    <StatsCard label="Word Count" value={wordCount} />
+                    
+                    <StatsCard label="Raw WPM" value={rawWpm} />
+                    <StatsCard label="Mistakes" value={errors} />
+                    <StatsCard label="Best WPM" value={bestWpm} />
+                    <StatsCard label="Best Accuracy" value={bestAccuracy.toFixed(0)} unit="%" />
+                </div>
+                
+                <div className={`w-full max-w-3xl transition-opacity duration-300 ${(zenMode && phase === TypePhase.Typing) ? 'opacity-0' : 'opacity-100'}`}>
+                    <ProgressBar progress={progress} />
+                </div>
+                
+                {quote && (
+                    <div key={quote.text} className="mb-6 text-center max-w-2xl px-4 animate-fade-in">
+                        <p className="text-lg sm:text-xl italic text-[var(--text-primary)] opacity-90 font-serif">
+                            "{quote.text}"
+                        </p>
+                        <p className="text-sm text-[var(--text-secondary)] mt-2 font-medium">
+                            — {quote.author}
+                        </p>
+                    </div>
+                )}
+                
+                {mode === 'daily' && phase !== TypePhase.Typing && (
+                    <DailyLeaderboard />
+                )}
+
+                {mode === 'multiplayer' && (
+                    <MultiplayerPanel 
+                        roomId={roomId}
+                        setRoomId={setRoomId}
+                        progress={progress}
+                        wpm={wpm}
+                        playerName={`Player ${Math.floor(Math.random() * 1000)}`}
+                    />
+                )}
+
+                <div className="w-full bg-[var(--bg-secondary)] p-6 rounded-lg shadow-lg relative min-h-[120px]" onClick={focusInput}>
+                    {loading ? (
+                        <div className="h-48 flex items-center justify-center">
+                            <Spinner />
+                        </div>
+                    ) : !textToType ? (
+                        <div className="h-24 flex items-center justify-center text-[var(--text-muted)] italic">
+                            {mode === 'custom' ? 'Load some custom text to start.' : 'Generating text...'}
+                        </div>
+                    ) : (
+                        <>
+                            <div className={`text-xl sm:text-2xl leading-relaxed tracking-wider text-[var(--text-secondary)] select-none break-words whitespace-pre-wrap ${language === 'bengali' ? 'font-serif' : ''}`}>
+                                {(() => {
+                                    const getCaretStyle = (style: CursorStyle) => {
+                                        switch (style) {
+                                            case 'block': return 'w-full h-full top-0 left-0 opacity-40';
+                                            case 'underline': return 'w-full h-[3px] bottom-0 left-0';
+                                            case 'line':
+                                            default: return 'w-[3px] h-[80%] top-[10%] -left-[1px] rounded-sm';
+                                        }
+                                    };
+                                    
+                                    return displayGraphemes.map(({ target, user }, index) => {
+                                        const isCursor = index === userInputGraphemes.length && phase !== TypePhase.Finished;
+                                        const isExtra = index >= textGraphemes.length;
+                                        
+                                        let charClassName = 'text-[var(--text-muted)]';
+                                        
+                                        if (user !== undefined) {
+                                            if (isExtra) {
+                                                charClassName = 'text-[var(--bg-incorrect)] opacity-80 border-b-2 border-[var(--bg-incorrect)] char-error'; 
+                                            } else if (user === target) {
+                                                charClassName = 'text-[var(--text-correct)] transition-colors duration-150';
+                                            } else {
+                                                charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded shadow-sm shadow-[var(--bg-incorrect)] char-error';
+                                            }
+                                        }
+
+                                        if (index === errorIndex && !isExtra) {
+                                            charClassName = 'bg-[var(--bg-incorrect)] text-[var(--text-incorrect)] rounded error-flash shadow-md shadow-[var(--bg-incorrect)]';
+                                        }
+                                        
+                                        let lastWasWrong = false;
+                                        if (isCursor) {
+                                            const lastIndex = index - 1;
+                                            lastWasWrong = lastIndex >= 0 && (
+                                                lastIndex >= textGraphemes.length || 
+                                                (userInputGraphemes[lastIndex] !== textGraphemes[lastIndex])
+                                            );
+                                        }
+
+                                        return (
+                                            <span key={index} className={`relative inline-block ${charClassName}`}>
+                                                {isCursor && (
+                                                    <motion.div
+                                                        layoutId="caret"
+                                                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                                        className={`absolute ${getCaretStyle(cursorStyle)} ${lastWasWrong ? 'bg-[var(--bg-incorrect)]' : 'bg-[var(--cursor-color)]'} animate-pulse`}
+                                                    />
+                                                )}
+                                                {isExtra ? user : (target === ' ' ? '\u00A0' : target)}
+                                            </span>
+                                        );
+                                    });
+                                })()}
+                                
+                                {phase !== TypePhase.Finished && userInputGraphemes.length === displayGraphemes.length && (
+                                     <span className="relative inline-block">
+                                        <motion.div
+                                            layoutId="caret"
+                                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                            className={`absolute ${
+                                                cursorStyle === 'block' ? 'w-full h-full top-0 left-0 opacity-40' : 
+                                                cursorStyle === 'underline' ? 'w-full h-[3px] bottom-0 left-0' : 
+                                                'w-[3px] h-[80%] top-[10%] -left-[1px] rounded-sm'
+                                            } ${
+                                                (userInputGraphemes.length > 0 && (
+                                                    userInputGraphemes.length > textGraphemes.length || 
+                                                    userInputGraphemes[userInputGraphemes.length-1] !== textGraphemes[userInputGraphemes.length-1]
+                                                )) ? 'bg-[var(--bg-incorrect)]' : 'bg-[var(--cursor-color)]'
+                                            } animate-pulse`}
+                                        />
+                                        &nbsp;
+                                    </span>
+                                )}
+                            </div>
+                            <textarea
+                                ref={inputRef as any}
+                                value={rawInput}
+                                onChange={handleInput as any}
+                                className="absolute top-0 left-0 w-full h-full opacity-0 cursor-text resize-none"
+                                disabled={phase === TypePhase.Finished || loading || !textToType}
+                                autoFocus
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck="false"
+                            />
+                        </>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-4 mt-8">
+                    <button 
+                        onClick={handleRestart} 
+                        title={`Restart (${shortcuts.restart})`}
+                        className="px-6 py-3 bg-[var(--accent-secondary)] text-[var(--text-primary-inverted)] font-bold rounded-lg hover:bg-[var(--accent-secondary-hover)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:ring-offset-2 focus:ring-offset-[var(--bg-primary)]"
+                    >
+                        {phase === TypePhase.Finished ? 'New Test' : 'Restart'}
+                    </button>
+                    {language === 'bengali' && (
+                         <button 
+                            onClick={() => setShowAvroChart(!showAvroChart)}
+                            title={`Show Avro Chart (${shortcuts.toggleAvroChart})`}
+                            aria-label="Show Avro Chart"
+                            className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
+                        >
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => setSoundEnabled(!soundEnabled)}
+                        title={`${soundEnabled ? "Disable sound" : "Enable sound"} (${shortcuts.toggleSound})`}
+                        aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
+                        className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
+                    >
+                        {soundEnabled ? (
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.858 15.858a5 5 0 010-7.072m2.829 9.9a9 9 0 010-12.728M12 6v12" /></svg>
+                        ) : (
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15.586a5 5 0 010-7.072m9.9 7.072a5 5 0 000-7.072m-4.243 4.242L12 12m0 0l-1.414-1.414m1.414 1.414L13.414 12m-1.414 0l-1.414 1.414m1.414-1.414L13.414 13.414M12 6v12" /></svg>
+                        )}
+                    </button>
+                    <button 
+                        onClick={() => setShowShortcutsModal(true)}
+                        aria-label="Customize keyboard shortcuts"
+                        className="p-3 rounded-lg bg-[var(--bg-tertiary)] hover:bg-[var(--bg-tertiary-hover)] transition-colors text-[var(--text-primary)]"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                    </button>
+                </div>
+                
+                {language === 'bengali' && showAvroChart && (
+                    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={() => setShowAvroChart(false)}>
+                        <div className="w-full max-w-5xl" onClick={e => e.stopPropagation()}>
+                            <AvroKeyboard 
+                                activeKey={activeKey} 
+                                onClose={() => setShowAvroChart(false)}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {testResults && phase === TypePhase.Finished && (
+                    <ResultsModal 
+                        results={testResults} 
+                        onRestart={handleRestart} 
+                    />
+                )}
+
+            </div>
+        </div>
+    );
+};
+
+export default Arena;
