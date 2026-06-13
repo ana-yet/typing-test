@@ -11,8 +11,8 @@ import ResultsModal from '../components/ResultsModal';
 import MultiplayerPanel from '../components/MultiplayerPanel';
 import DailyLeaderboard from '../components/DailyLeaderboard';
 import { TypePhase, TestMode, TestResults, WpmDataPoint, CursorStyle } from '../types';
-import { useSettingsStore } from '../store/useSettingsStore';
-import { useHistoryStore } from '../store/useHistoryStore';
+import { useSettingsStore } from '../src/store/useSettingsStore';
+import { useHistoryStore } from '../src/store/useHistoryStore';
 
 const themes: Record<string, any> = {
   dark: {

@@ -2,7 +2,7 @@ import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { TestResults } from '../types';
 import { RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { useHistoryStore } from '../store/useHistoryStore';
+import { useHistoryStore } from '../src/store/useHistoryStore';
 
 interface ResultsModalProps {
     results: TestResults;

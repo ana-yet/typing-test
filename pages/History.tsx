@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useHistoryStore } from '../store/useHistoryStore';
+import { useHistoryStore } from '../src/store/useHistoryStore';
 import { Search, ArrowUpDown, Clock, Activity, Target } from 'lucide-react';
 import { format } from 'date-fns';
 

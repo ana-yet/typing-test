@@ -1,5 +1,5 @@
 import React from 'react';
-import { useHistoryStore } from '../store/useHistoryStore';
+import { useHistoryStore } from '../src/store/useHistoryStore';
 import { Trophy, Star, Medal, Lock } from 'lucide-react';
 import { format } from 'date-fns';
 

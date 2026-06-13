@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { CursorStyle, SoundPack, Language } from '../types';
+import { CursorStyle, SoundPack, Language } from '../../types';
 
 interface SettingsState {
   theme: string;

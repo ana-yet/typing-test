@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useHistoryStore } from '../store/useHistoryStore';
+import { useHistoryStore } from '../src/store/useHistoryStore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Target, Zap, Clock, Activity, Flame } from 'lucide-react';
 import { format } from 'date-fns';
@@ -18,7 +18,7 @@ export default function Dashboard() {
 
     const heatmapData = useMemo(() => {
         return Object.entries(mistakeHeatmap)
-            .sort((a, b) => b[1] - a[1])
+            .sort((a, b) => (b[1] as number) - (a[1] as number))
             .slice(0, 10)
             .map(([char, count]) => ({
                 char: char === ' ' ? 'Space' : char,
