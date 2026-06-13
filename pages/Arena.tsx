@@ -10,7 +10,7 @@ import AvroKeyboard from '../components/AvroKeyboard';
 import ResultsModal from '../components/ResultsModal';
 import MultiplayerPanel from '../components/MultiplayerPanel';
 import DailyLeaderboard from '../components/DailyLeaderboard';
-import { TypePhase, TestMode, TestResults, WpmDataPoint } from '../types';
+import { TypePhase, TestMode, TestResults, WpmDataPoint, CursorStyle } from '../types';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useHistoryStore } from '../store/useHistoryStore';
 
@@ -393,7 +393,7 @@ const Arena: React.FC = () => {
                         handleRestart();
                         break;
                     case 'toggleSound':
-                        setSoundEnabled(prev => !prev);
+                        setSoundEnabled(!soundEnabled);
                         break;
                     case 'toggleAvroChart':
                         if (language === 'bengali') {
@@ -406,7 +406,7 @@ const Arena: React.FC = () => {
 
         window.addEventListener('keydown', handleGlobalKeyDown);
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-    }, [shortcuts, showShortcutsModal, language, handleRestart]);
+    }, [shortcuts, showShortcutsModal, language, handleRestart, soundEnabled]);
 
     const playSystemSound = useCallback((type: 'click' | 'error') => {
         if (!soundEnabled) return;
