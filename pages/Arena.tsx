@@ -685,7 +685,8 @@ const Arena: React.FC = () => {
                 accuracy,
                 mode,
                 duration: elapsedTime,
-                mistakes: missedChars
+                mistakes: missedChars,
+                language: language
             });
 
             setTestResults({

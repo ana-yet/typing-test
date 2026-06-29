@@ -10,6 +10,7 @@ export interface TestRecord {
   mode: string;
   duration: number;
   mistakes: Record<string, number>;
+  language?: string;
 }
 
 export interface Achievement {
